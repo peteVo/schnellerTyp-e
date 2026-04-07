@@ -1,2 +1,2 @@
 # schnellerTyp-e
-A (universal) typewriting assistant for special Latin characters for European languages. Inspired by Unikey by Pham Kim Long.
+A (universal) typewriting assistant for special Latin characters for European languages. Inspired by Unikey.
