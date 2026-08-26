@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MIT
+# Maintainer: you <you@example.com>
+#
+# PKGBUILD for Arch Linux and its derivatives (CachyOS, EndeavourOS, Manjaro).
+#
+#   cd packaging/linux
+#   makepkg -si
+#
+# libuiohook is not in the official repositories; it comes from the AUR. Either
+# install it first (`paru -S libuiohook` / `yay -S libuiohook`) or let an AUR
+# helper resolve it as a dependency of this package.
+
+pkgname=schnellertype-e
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Cross-platform input method editor: German umlauts and Vietnamese Telex/VNI"
+arch=('x86_64' 'aarch64')
+url="https://example.invalid/schnellerTyp-e"
+license=('MIT')
+
+depends=(
+  'qt6-base'
+  'qt6-declarative'
+  'libuiohook'      # AUR
+  'libx11'
+  'libxtst'
+  'hicolor-icon-theme'
+)
+makedepends=('cmake' 'ninja' 'git')
+optdepends=('xorg-server: X11 session — schnellerTyp-e cannot hook a pure Wayland session')
+
+# Building from the working tree rather than a release tarball:
+source=()
+sha256sums=()
+
+_srcdir="${startdir}/../.."
+
+build() {
+  cmake -S "${_srcdir}" -B "${srcdir}/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DSCHNELLERTYPE_BUILD_TESTS=ON
+  cmake --build "${srcdir}/build"
+}
+
+check() {
+  ctest --test-dir "${srcdir}/build" --output-on-failure
+}
+
+package() {
+  DESTDIR="${pkgdir}" cmake --install "${srcdir}/build"
+
+  install -Dm644 "${_srcdir}/packaging/linux/schnellerTyp-e.desktop" \
+    "${pkgdir}/usr/share/applications/schnellerTyp-e.desktop"
+
+  # Autostart into the tray on login.
+  install -Dm644 "${_srcdir}/packaging/linux/schnellerTyp-e.desktop" \
+    "${pkgdir}/etc/xdg/autostart/schnellerTyp-e.desktop"
+}

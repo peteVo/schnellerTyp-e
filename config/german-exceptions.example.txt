@@ -1,0 +1,24 @@
+# schnellerTyp-e — extra German exception words.
+#
+# Copy into the config folder as german-exceptions.txt and press Reload.
+#
+# One line per digraph: ae, oe, ue or ss. Words are written the way you TYPE
+# them (plain ASCII), are matched case-insensitively, and act as prefixes —
+# listing "dauer" also covers "dauern", "Dauerkarte" and "dauerhaft".
+#
+# Each entry must actually contain its digraph; that is how the engine knows
+# which position to keep literal.
+#
+# How the matching behaves: the digraph stays literal for as long as what you
+# have typed and a listed word still agree with each other. The moment they
+# diverge, the transformation reappears on its own. That is why "duell" stays
+# "duell" while "duester" still becomes "düster", and why "aussehen" stays
+# intact while "aussen" becomes "außen".
+#
+# Entries here are merged with the list compiled into the program; they never
+# replace it.
+
+ue: sauerteig, feuerzeug, abenteurer, heuer, ungeheuer, beteuer, erneuer
+oe: koedukativ, koexistieren, poetik
+ae: aeroplan, aerodrom, michaela
+ss: nussschale, flussschifffahrt, ausschuesse, kongresse, imbiss, gebiss

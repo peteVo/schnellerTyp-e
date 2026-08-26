@@ -1,0 +1,42 @@
+{
+  "$comment": [
+    "Copy this file into the schnellerTyp-e config folder as rules/<name>.json",
+    "(Settings > Custom rules > Open config folder), then press Reload.",
+    "",
+    "It becomes a new entry in the language selector and gets its own tray badge.",
+    "",
+    "Fields per rule:",
+    "  trigger        the keystrokes to match, at the end of the current word",
+    "  replacement    what to produce instead",
+    "  caseSensitive  false (default) matches 'BTW' as well as 'btw'",
+    "  smartCase      true (default) copies the typed casing onto the result:",
+    "                 'Btw' -> 'By the way', 'BTW' -> 'BY THE WAY'",
+    "  wordStart      true fires only when the trigger is the whole word so far",
+    "",
+    "The longest matching trigger wins. Pressing the trigger's last key again",
+    "undoes the substitution, and the escape key takes the next keystroke",
+    "literally."
+  ],
+
+  "id": "es",
+  "displayName": "Spanish accents",
+  "badge": "ES",
+  "doubleKeyRevert": true,
+  "escapeKey": "\\",
+
+  "rules": [
+    { "trigger": "a'", "replacement": "á" },
+    { "trigger": "e'", "replacement": "é" },
+    { "trigger": "i'", "replacement": "í" },
+    { "trigger": "o'", "replacement": "ó" },
+    { "trigger": "u'", "replacement": "ú" },
+    { "trigger": "u\"", "replacement": "ü" },
+    { "trigger": "n~", "replacement": "ñ" },
+    { "trigger": "?/", "replacement": "¿" },
+    { "trigger": "!/", "replacement": "¡" },
+
+    { "trigger": "sig",  "replacement": "Saludos cordiales,", "wordStart": true },
+    { "trigger": "-->", "replacement": "→", "smartCase": false },
+    { "trigger": "(c)",  "replacement": "©", "smartCase": false }
+  ]
+}

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=schnellerTyp-e
+GenericName=Input Method Editor
+Comment=German umlauts and Vietnamese Telex/VNI anywhere on the desktop
+Exec=schnellerTyp-e
+Icon=schnellerTyp-e
+Terminal=false
+Categories=Utility;
+Keywords=IME;Vietnamese;Telex;VNI;German;Umlaut;Unicode;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- A global keyboard hook is fundamentally incompatible with the App
+         Sandbox, so schnellerTyp-e is distributed outside the Mac App Store.
+         These entitlements are what a Developer-ID build needs; an ad-hoc
+         signature ignores them but the file documents the intent. -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Required when the build is hardened-runtime signed for notarisation. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.device.input-monitoring</key>
+    <true/>
+
+    <!-- Qt loads its plugins at runtime; without this the hardened runtime
+         refuses to load them from the bundle. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
