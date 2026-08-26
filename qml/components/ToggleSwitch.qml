@@ -12,8 +12,12 @@ RowLayout {
     property string label: ""
     property string description: ""
     property bool checked: false
-    property bool enabled: true
     signal toggled(bool value)
+
+    // Note: no `property bool enabled` here. Item already has one, redeclaring
+    // it shadows the base member (Qt warns: "overrides a member of the base
+    // object"), and the shadow does *not* propagate to child items — so the
+    // MouseArea below would stay live on a "disabled" control.
 
     Layout.fillWidth: true
     spacing: Theme.gap
@@ -67,7 +71,6 @@ RowLayout {
         MouseArea {
             anchors.fill: parent
             cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            enabled: root.enabled
             onClicked: root.toggled(!root.checked)
         }
     }

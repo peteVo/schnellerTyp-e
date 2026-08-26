@@ -66,14 +66,22 @@ source once. It needs nothing but the compiler on Windows (it links only
 
 ```powershell
 git clone https://github.com/kwhat/libuiohook.git C:\src\libuiohook
-cmake -S C:\src\libuiohook -B C:\src\libuiohook\build ^
+cmake -S C:\src\libuiohook -B C:\src\libuiohook\build-x64 -A x64 ^
       -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=C:\libs\uiohook
-cmake --build C:\src\libuiohook\build --config Release
-cmake --install C:\src\libuiohook\build --config Release
+cmake --build C:\src\libuiohook\build-x64 --config Release
+cmake --install C:\src\libuiohook\build-x64 --config Release
 ```
 
 That leaves `C:\libs\uiohook\include\uiohook.h`, `lib\uiohook.lib` and
 `bin\uiohook.dll`.
+
+**Pass `-A x64` explicitly.** Otherwise the architecture depends on which
+developer prompt is open and which generator CMake chose, and a 32-bit
+libuiohook against a 64-bit app fails as four unresolved `hook_*` symbols with
+one easily-missed `LNK4272` warning above them. Verify with
+`dumpbin /headers C:\libs\uiohook\lib\uiohook.lib | findstr machine`; a
+build tree cannot change platform in place, so use a fresh directory if you
+need to redo it.
 
 ### 2. Configure and build
 
@@ -312,11 +320,43 @@ those two, or an X11 session with a native IME.
 |---|---|
 | Left click | Pause / resume |
 | Middle click | Next language |
+| Ctrl + Shift | Next language, or Off (see below) |
 | Double click | Open settings |
 | Right click | Menu: settings, enable, language, reload rules, config folder, quit |
 
 Closing the settings window does not quit the app; use the tray menu or the
 Quit button.
+
+### The keyboard shortcut
+
+**Tap Ctrl and Shift together and let go** — without pressing anything else —
+to step through the profiles and Off:
+
+```
+German  →  Vietnamese  →  French accents  →  Off  →  German  →  …
+```
+
+Everything you have loaded is in the rotation, so a custom JSON rule set joins
+it with no extra configuration. Coming back from Off always lands on the first
+profile.
+
+It fires on **release**, and any other key pressed while the modifiers are down
+cancels it. That is what lets it coexist with the shortcuts you already use:
+Ctrl+Shift+T reopens your browser tab exactly as before, because the `T`
+stands the chord down on its way through. Left and right modifiers are
+interchangeable.
+
+Settings → Language offers **Ctrl + Shift**, **Ctrl + Alt**, **Alt + Shift** or
+**No shortcut**. On macOS these read Control, Option and Shift. Pick a different
+one if something else on your system already claims a bare modifier tap — some
+Windows installations use Ctrl+Shift to switch keyboard layouts, under
+*Settings → Time & language → Typing → Advanced keyboard settings → Input
+language hot keys*.
+
+If the chord seems dead, the log says whether it fired at all: look for
+`shortcut: cycled to …` in `schnellerTyp-e.log` (the settings window shows the
+folder). A line there with nothing happening on screen is a different problem
+from no line at all.
 
 ### German
 

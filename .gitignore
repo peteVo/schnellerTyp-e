@@ -5,3 +5,5 @@ cmake-build-*/
 compile_commands.json
 *.user
 .DS_Store
+WINDOWS-BUILD.md
+dist/

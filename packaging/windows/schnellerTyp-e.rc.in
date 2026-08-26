@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: MIT
+//
+// Windows resource script. Two jobs:
+//
+//   * the application icon, so the executable is not a blank page in Explorer,
+//     in the taskbar, or in the "Windows protected your PC" dialog that an
+//     unsigned download always shows first;
+//   * a VERSIONINFO block, so right-click → Properties → Details shows a real
+//     product name and version instead of nothing at all. SmartScreen and most
+//     antivirus heuristics treat a binary with no version resource as slightly
+//     more suspicious than one with it.
+//
+// Configured by CMake: @PROJECT_VERSION@ and friends are substituted.
+
+#include <windows.h>
+
+// The first icon by numeric ID becomes the executable's shell icon, so this
+// must stay the lowest ID in the file.
+1 ICON "@SCHNELLERTYPE_ICON_PATH@"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS      VS_FF_DEBUG
+#else
+FILEFLAGS      0x0L
+#endif
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 040904B0 = US English, Unicode.
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "schnellerTyp-e"
+            VALUE "FileDescription",  "Input method editor: German umlauts and Vietnamese Telex/VNI"
+            VALUE "FileVersion",      "@PROJECT_VERSION@.0"
+            VALUE "InternalName",     "schnellerTyp-e"
+            VALUE "LegalCopyright",   "MIT licence. Qt and libuiohook are LGPL-3.0."
+            VALUE "OriginalFilename", "schnellerTyp-e.exe"
+            VALUE "ProductName",      "schnellerTyp-e"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -33,6 +33,11 @@ class AppController : public QObject {
     Q_PROPERTY(QString trayBadge READ trayBadge NOTIFY trayBadgeChanged)
     Q_PROPERTY(QString languageName READ languageName NOTIFY languageChanged)
 
+    // --- shortcut -----------------------------------------------------------
+    Q_PROPERTY(QString cycleChord READ cycleChord WRITE setCycleChord NOTIFY cycleChordChanged)
+    Q_PROPERTY(QString cycleChordName READ cycleChordName NOTIFY cycleChordChanged)
+    Q_PROPERTY(QVariantList cycleChordOptions READ cycleChordOptions CONSTANT)
+
     // --- diagnostics --------------------------------------------------------
     Q_PROPERTY(QString hookState READ hookState NOTIFY statusChanged)
     Q_PROPERTY(QString hookMessage READ hookMessage NOTIFY statusChanged)
@@ -70,6 +75,11 @@ public:
     /// from main() after the QML engine exists.
     void initialise();
 
+    /// Override the persisted "start the hook on launch" setting for this run
+    /// only, without writing it back. This is what --no-hook drives: it splits
+    /// the program in half for diagnosis without changing the user's config.
+    void setAutoStartHook(bool value) { autoStartHook_ = value; }
+
     // --- properties ---------------------------------------------------------
     [[nodiscard]] bool         enabled() const { return enabled_; }
     void                       setEnabled(bool enabled);
@@ -78,6 +88,14 @@ public:
     [[nodiscard]] QString      languageName() const;
     [[nodiscard]] QVariantList languages() const { return languages_; }
     [[nodiscard]] QString      trayBadge() const;
+
+    /// The cycle shortcut, as "ctrl+shift" / "ctrl+alt" / "alt+shift" / "none".
+    [[nodiscard]] QString      cycleChord() const;
+    void                       setCycleChord(const QString& chord);
+    /// The same thing spelled for humans, e.g. "Ctrl + Shift".
+    [[nodiscard]] QString      cycleChordName() const;
+    /// [{ value, label }, …] for the settings window.
+    [[nodiscard]] QVariantList cycleChordOptions() const;
 
     [[nodiscard]] QString hookState() const;
     [[nodiscard]] QString hookMessage() const { return QString::fromStdString(status_.message); }
@@ -120,8 +138,11 @@ public:
     // --- actions ------------------------------------------------------------
 public slots:
     void toggleEnabled();
-    /// Step through the configured languages — the tray's left-click action.
+    /// Step through the configured languages — the tray's middle-click action.
     void cycleLanguage();
+    /// Step through the languages and then Off, wrapping back to the first
+    /// language. This is what the keyboard chord drives.
+    void cycleLanguageOrOff();
     void requestPermissions();
     void openPermissionSettings();
     void openConfigDirectory();
@@ -138,6 +159,7 @@ signals:
     void vnOptionsChanged();
     void deOptionsChanged();
     void customRulesChanged();
+    void cycleChordChanged();
     /// Emitted when the tray or a second instance asks for the window.
     void settingsWindowRequested();
 
@@ -154,6 +176,7 @@ private:
     QString                          languageId_;
     QString                          customRulesSummary_;
     bool                             enabled_ = true;
+    bool                             autoStartHook_ = true;
 
     // Mirrors of the engine option structs so QML can bind to them without the
     // engine having to exist yet.

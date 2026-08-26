@@ -10,13 +10,16 @@ rewrites what you typed in whichever application has focus.
   placement, spelling check and auto-restore.
 - **Anything else** — a new language or a set of text expansions is a JSON file
   in the config folder, or one `registerEngine()` call in C++.
+- **One-chord switching** — tap **Ctrl + Shift** and let go to step German →
+  Vietnamese → … → Off → German, anywhere, in any application.
 
 Windows, macOS and Linux/X11. Modern C++20, CMake, Qt 6 with a QML dark-mode
 settings window, libuiohook for capture and a native backend per platform for
 injection.
 
 **[BUILD.md](BUILD.md) has the build instructions, the per-OS permission notes
-and the user guide.** Windows users following the Qt Creator route can use
+and the user guide.** [RELEASE.md](RELEASE.md) covers producing a portable
+Windows zip to hand to someone who does not build software. Windows users following the Qt Creator route can use
 **[WINDOWS-BUILD.md](WINDOWS-BUILD.md)**, which is the same thing condensed to
 one path.
 

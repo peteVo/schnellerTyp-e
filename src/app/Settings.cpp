@@ -14,6 +14,7 @@ namespace {
 const auto kEnabledKey   = QStringLiteral("app/enabled");
 const auto kLanguageKey  = QStringLiteral("app/language");
 const auto kStartHookKey = QStringLiteral("app/startHookOnLaunch");
+const auto kCycleChordKey = QStringLiteral("app/cycleChord");
 
 } // namespace
 
@@ -49,6 +50,16 @@ bool Settings::startHookOnLaunch() const
 void Settings::setStartHookOnLaunch(bool value)
 {
     settings_.setValue(kStartHookKey, value);
+}
+
+QString Settings::cycleChord() const
+{
+    return settings_.value(kCycleChordKey, QStringLiteral("ctrl+shift")).toString();
+}
+
+void Settings::setCycleChord(const QString& chord)
+{
+    settings_.setValue(kCycleChordKey, chord);
 }
 
 EngineOptions Settings::engineOptions(const QString& engineId) const

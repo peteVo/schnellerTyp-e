@@ -103,10 +103,19 @@ ApplicationWindow {
 
             // --- language ---------------------------------------------------
             Card {
+                id: languageCard
                 Layout.leftMargin: 22
                 Layout.rightMargin: 22
                 title: qsTr("Language")
                 subtitle: qsTr("Left-click the tray icon to pause, middle-click to switch.")
+
+                // "German → Vietnamese → French → Off", built from whatever
+                // engines are actually loaded so a custom rule file appears here
+                // without anyone editing this file.
+                readonly property string rotation:
+                    App.languages.map(function (entry) { return entry.name; })
+                                 .concat([qsTr("Off")])
+                                 .join(" → ")
 
                 ChoiceRow {
                     current: App.languageId
@@ -114,6 +123,37 @@ ApplicationWindow {
                         return { value: entry.id, label: entry.name, badge: entry.badge };
                     })
                     onSelected: (value) => App.languageId = value
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Cycle shortcut")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Hold the modifiers and let go without pressing anything else. "
+                               + "Combinations that include another key — Ctrl+Shift+T and the "
+                               + "like — are left alone.")
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSizeSmall
+                    wrapMode: Text.WordWrap
+                }
+
+                ChoiceRow {
+                    current: App.cycleChord
+                    options: App.cycleChordOptions.map(function (entry) {
+                        return {
+                            value: entry.value,
+                            label: entry.label,
+                            hint: entry.value === "none" ? "" : languageCard.rotation
+                        };
+                    })
+                    onSelected: (value) => App.cycleChord = value
                 }
             }
 

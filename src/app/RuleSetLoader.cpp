@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "app/RuleSetLoader.hpp"
 
+#include "app/Diagnostics.hpp"
 #include "core/RuleEngineRegistry.hpp"
 #include "core/Unicode.hpp"
 
@@ -173,6 +174,7 @@ void RuleSetLoader::loadRuleSets(const QString& configDir, LoadReport& report)
 
     const QStringList files = dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name);
     for (const QString& name : files) {
+        diagnostics::milestone(QStringLiteral("    rules: ") + name);
         QFile file(dir.filePath(name));
         if (!file.open(QIODevice::ReadOnly)) {
             report.errors << QStringLiteral("%1: cannot open").arg(name);
@@ -199,6 +201,7 @@ void RuleSetLoader::loadLayouts(const QString& configDir, KeyMapper& mapper, Loa
         // ".example.json" files are documentation, not configuration.
         if (name.contains(QStringLiteral(".example.")))
             continue;
+        diagnostics::milestone(QStringLiteral("    layout: ") + name);
 
         QFile file(dir.filePath(name));
         if (!file.open(QIODevice::ReadOnly)) {

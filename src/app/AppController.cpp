@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "app/AppController.hpp"
 
+#include "app/Diagnostics.hpp"
 #include "app/RuleSetLoader.hpp"
 #include "core/RuleEngineRegistry.hpp"
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
@@ -37,6 +38,7 @@ void AppController::initialise()
     // stored choice on every launch.
     enabled_    = settings_.enabled();
     languageId_ = settings_.languageId();
+    hook_->setChord(HookService::chordFromString(settings_.cycleChord().toStdString()));
 
     // Restore engine options.
     const EngineOptions vn = settings_.engineOptions(QStringLiteral("vi"));
@@ -60,8 +62,24 @@ void AppController::initialise()
     deOptions_.useExceptions   = boolOpt(de, "useExceptions", deOptions_.useExceptions);
 
     const QString configDir = Settings::configDirectory();
-    RuleSetLoader::ensureConfigDirectory(configDir);
-    reloadCustomRules();
+    diagnostics::milestone(QStringLiteral("config directory: ") + configDir);
+
+    // Everything below reads user-editable files. A malformed one must not be
+    // able to take the whole program down, so failures here degrade to the
+    // built-in engines rather than propagating.
+    try {
+        diagnostics::milestone(QStringLiteral("ensuring config directory"));
+        RuleSetLoader::ensureConfigDirectory(configDir);
+
+        diagnostics::milestone(QStringLiteral("loading custom rules"));
+        reloadCustomRules();
+    } catch (const std::exception& e) {
+        qCritical("custom rules failed to load (%s); continuing with the built-in engines only",
+                  e.what());
+        RuleEngineRegistry::instance().clearRuleSets();
+        RuleEngineRegistry::instance().registerBuiltins();
+        rebuildLanguageList();
+    }
 
     // The hook thread calls back from outside the GUI thread; bounce onto it.
     hook_->setStatusCallback([this](HookService::Status status) {
@@ -70,14 +88,28 @@ void AppController::initialise()
             Qt::QueuedConnection);
     });
 
+    // Same rule for the shortcut: it fires inside the OS keyboard callback, so
+    // nothing Qt-shaped may happen there. Queue it and let the event loop do
+    // the language switch, the settings write and the tray repaint.
+    hook_->setShortcutCallback([this] {
+        QMetaObject::invokeMethod(this, [this] { cycleLanguageOrOff(); },
+                                  Qt::QueuedConnection);
+    });
+
+    diagnostics::milestone(QStringLiteral("creating the rule engine"));
     applyEngine();
     hook_->setEnabled(enabled_);
 
     status_ = hook_->status();
     emit statusChanged();
 
-    if (settings_.startHookOnLaunch())
+    if (autoStartHook_ && settings_.startHookOnLaunch()) {
+        diagnostics::milestone(QStringLiteral("starting the keyboard hook"));
         hook_->start();
+        diagnostics::milestone(QStringLiteral("keyboard hook start requested"));
+    } else {
+        qInfo("keyboard hook not started (disabled for this run)");
+    }
 
     emit enabledChanged();
     emit languageChanged();
@@ -105,7 +137,14 @@ void AppController::rebuildLanguageList()
         entry[QStringLiteral("badge")] = QString::fromStdString(descriptor.badge);
         languages_.append(entry);
     }
+
+    // This emit fans out to two places that are easy to confuse when something
+    // goes wrong: the QML bindings on App.languages, and TrayController's menu
+    // rebuild. Bracketing it says which side a fault is on without a debugger.
+    diagnostics::milestone(QStringLiteral("    languages built (%1); emitting")
+                               .arg(languages_.size()));
     emit languagesChanged();
+    diagnostics::milestone(QStringLiteral("    languagesChanged delivered"));
 }
 
 void AppController::applyEngine()
@@ -202,6 +241,77 @@ void AppController::cycleLanguage()
     setLanguageId(languages_.at(next).toMap().value(QStringLiteral("id")).toString());
 }
 
+void AppController::cycleLanguageOrOff()
+{
+    if (languages_.isEmpty())
+        return;
+
+    // Off is the last stop, not a language: German → Vietnamese → … → Off →
+    // German. Coming back on always lands on the first language rather than
+    // whatever was selected when it went off, so the rotation reads the same
+    // way every time round.
+    if (!enabled_) {
+        setLanguageId(languages_.first().toMap().value(QStringLiteral("id")).toString());
+        setEnabled(true);
+    } else {
+        int index = -1;
+        for (int i = 0; i < languages_.size(); ++i) {
+            if (languages_.at(i).toMap().value(QStringLiteral("id")).toString() == languageId_) {
+                index = i;
+                break;
+            }
+        }
+
+        const int next = index + 1;
+        if (next >= languages_.size())
+            setEnabled(false);
+        else
+            setLanguageId(languages_.at(next).toMap().value(QStringLiteral("id")).toString());
+    }
+
+    // Logged unconditionally: when someone reports that the chord "does
+    // nothing", the first thing worth knowing is whether it fired at all.
+    qInfo("shortcut: cycled to %s", enabled_ ? qUtf8Printable(languageName()) : "Off");
+}
+
+QString AppController::cycleChord() const
+{
+    return QString::fromLatin1(HookService::chordToString(hook_->chord()));
+}
+
+void AppController::setCycleChord(const QString& chord)
+{
+    const HookService::Chord parsed = HookService::chordFromString(chord.toStdString());
+    if (parsed == hook_->chord())
+        return;
+    hook_->setChord(parsed);
+    settings_.setCycleChord(QString::fromLatin1(HookService::chordToString(parsed)));
+    settings_.sync();
+    emit cycleChordChanged();
+}
+
+QString AppController::cycleChordName() const
+{
+    return QString::fromLatin1(HookService::chordDisplayName(hook_->chord()));
+}
+
+QVariantList AppController::cycleChordOptions() const
+{
+    QVariantList options;
+    for (const HookService::Chord chord :
+         {HookService::Chord::CtrlShift, HookService::Chord::CtrlAlt,
+          HookService::Chord::AltShift, HookService::Chord::None}) {
+        QVariantMap entry;
+        entry[QStringLiteral("value")] = QString::fromLatin1(HookService::chordToString(chord));
+        entry[QStringLiteral("label")] =
+            chord == HookService::Chord::None
+                ? tr("No shortcut")
+                : QString::fromLatin1(HookService::chordDisplayName(chord));
+        options.append(entry);
+    }
+    return options;
+}
+
 QString AppController::languageName() const
 {
     for (const QVariant& entry : languages_) {
@@ -290,10 +400,17 @@ void AppController::reloadCustomRules()
     const QString configDir = Settings::configDirectory();
 
     LoadReport report;
+    diagnostics::milestone(QStringLiteral("  clearing rule sets"));
     RuleEngineRegistry::instance().clearRuleSets();
     RuleEngineRegistry::instance().registerBuiltins();
+
+    diagnostics::milestone(QStringLiteral("  loading rules/*.json"));
     RuleSetLoader::loadRuleSets(configDir, report);
+
+    diagnostics::milestone(QStringLiteral("  loading layouts/*.json"));
     RuleSetLoader::loadLayouts(configDir, hook_->keyMapper(), report);
+
+    diagnostics::milestone(QStringLiteral("  loading german-exceptions.txt"));
     germanExceptions_ = RuleSetLoader::loadGermanExceptions(configDir, report);
 
     customRulesSummary_ =
@@ -304,13 +421,17 @@ void AppController::reloadCustomRules()
                   .arg(report.exceptionWords)
             : report.errors.join(QStringLiteral("\n"));
 
+    diagnostics::milestone(QStringLiteral("  rebuilding the language list"));
     rebuildLanguageList();
+
+    diagnostics::milestone(QStringLiteral("  selecting the engine"));
     if (!languageId_.isEmpty()
         && !RuleEngineRegistry::instance().contains(languageId_.toStdString()))
         setLanguageId(QStringLiteral("de"));
     else
         applyEngine();
 
+    diagnostics::milestone(QStringLiteral("  custom rules loaded"));
     emit customRulesChanged();
 }
 

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <QIcon>
+#include <QList>
 #include <QObject>
 #include <QPointer>
 #include <QSystemTrayIcon>
@@ -41,12 +42,21 @@ private slots:
     void rebuildLanguageMenu();
 
 private:
+    /// Create language actions until at least `count` exist. Only ever called
+    /// with the menu in a state where adding items is safe — see the comment
+    /// in rebuildLanguageMenu().
+    void growLanguageActions(qsizetype count);
+
     AppController&           controller_;
     QSystemTrayIcon*         tray_ = nullptr;
     QMenu*                   menu_ = nullptr;
     QMenu*                   languageMenu_ = nullptr;
     QActionGroup*            languageGroup_ = nullptr;
     QAction*                 enabledAction_ = nullptr;
+
+    /// Every language action ever created, in menu order. The menu is only
+    /// grown and relabelled, never pruned — see rebuildLanguageMenu().
+    QList<QAction*>          languageActions_;
 };
 
 } // namespace st

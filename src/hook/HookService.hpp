@@ -40,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace st {
@@ -59,6 +60,24 @@ public:
     /// Called from the hook thread whenever the status changes. The Qt layer
     /// must marshal it onto the GUI thread (AppController does).
     using StatusCallback = std::function<void(Status)>;
+
+    /// A modifier-only shortcut, in the style Unikey uses: hold the modifiers,
+    /// release them without having pressed anything else, and it fires.
+    ///
+    /// Firing on release rather than press is what makes this safe to live
+    /// alongside ordinary shortcuts. Ctrl+Shift+T is still Ctrl+Shift+T: the
+    /// "T" cancels the chord on its way through, so only a deliberate
+    /// press-and-let-go of the bare modifiers triggers anything.
+    enum class Chord {
+        None,
+        CtrlShift,
+        CtrlAlt,
+        AltShift,
+    };
+
+    /// Called from the hook thread when the chord fires. Marshal it onto the
+    /// GUI thread, exactly like StatusCallback.
+    using ShortcutCallback = std::function<void()>;
 
     HookService();
     ~HookService();
@@ -90,6 +109,17 @@ public:
 
     void setStatusCallback(StatusCallback callback);
 
+    /// The chord fires regardless of the master switch: turning the IME back
+    /// on is one of the things it is for.
+    void                 setShortcutCallback(ShortcutCallback callback);
+    void                 setChord(Chord chord) { chord_.store(chord); }
+    [[nodiscard]] Chord  chord() const noexcept { return chord_.load(); }
+
+    /// Parse/print the chord for QSettings and QML. Unknown text is None.
+    [[nodiscard]] static Chord       chordFromString(std::string_view text);
+    [[nodiscard]] static const char* chordToString(Chord chord);
+    [[nodiscard]] static const char* chordDisplayName(Chord chord);
+
     /// Entry point for libuiohook's C dispatch callback. Not part of the public
     /// API in spirit — it is public only so the C shim can reach it.
     static void dispatchTrampoline(void* uiohookEvent);
@@ -107,6 +137,11 @@ private:
     void handleEvent(void* event);
     void handleKeyPressed(void* event);
 
+    /// Chord tracking. Both are touched only from the hook thread.
+    void trackChordPress(std::uint16_t keycode, std::uint16_t mask);
+    void trackChordRelease(std::uint16_t keycode, std::uint16_t mask);
+    void cancelChord() noexcept { chordArmed_ = false; }
+
     void enqueue(Edit edit);
     void injectorLoop();
     void hookLoop();
@@ -121,6 +156,13 @@ private:
     std::atomic_bool enabled_{false};
     std::atomic_bool running_{false};
     std::atomic_bool stopRequested_{false};
+
+    // --- modifier-only shortcut ---------------------------------------------
+    std::atomic<Chord> chord_{Chord::None};
+    ShortcutCallback   shortcutCallback_;
+    /// True once every modifier the chord wants has been seen down with nothing
+    /// else pressed since. Hook thread only.
+    bool               chordArmed_ = false;
 
     // --- "is this event one of mine?" ---------------------------------------
     //

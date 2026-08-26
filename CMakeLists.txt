@@ -41,20 +41,85 @@ qt_standard_project_setup(REQUIRES 6.4)
 
 find_package(UIOHook REQUIRED)
 
-# libuiohook changed its dispatch signature in 1.3 (it gained a user-data
-# pointer). Detect it instead of guessing from a version number, because
-# distributions patch both ways.
 include(CheckCXXSourceCompiles)
 set(CMAKE_REQUIRED_INCLUDES ${UIOHOOK_INCLUDE_DIRS})
-# check_cxx_source_compiles links as well as compiles, so the library has to be
-# on the line — otherwise a perfectly good 1.3 install fails the probe at link
-# time and the 1.2 signature gets used against a 1.3 header.
+# The probes below link as well as compile, so the library has to be on the
+# line — otherwise a perfectly good 1.3 install fails at link time and the 1.2
+# signature gets used against a 1.3 header.
 set(CMAKE_REQUIRED_LIBRARIES ${UIOHOOK_LIBRARIES})
+
+# Both results are cached, and a cached "no" would survive the very fix it is
+# telling the user to apply — they would rebuild libuiohook, re-run CMake, and
+# see the identical error. Clear them so every configure re-runs the probes.
+unset(UIOHOOK_LINKS CACHE)
+unset(UIOHOOK_DISPATCH_HAS_USERDATA CACHE)
+
+# --- probe 1: can we link against it at all? --------------------------------
+#
+# This exists because of the most misleading failure in the whole project. Give
+# MSVC a libuiohook built for the wrong architecture and it does not error: it
+# emits LNK4272 as a *warning*, silently drops the library, and the build dies
+# with four unresolved externals naming our own functions. Nothing in that
+# message says "wrong architecture", and nothing points at libuiohook.
+#
+# hook_stop() is the probe because its signature is identical in 1.2 and 1.3, so
+# a failure here means the library is unusable rather than merely a different
+# version.
+check_cxx_source_compiles("
+    #include <uiohook.h>
+    int main() { return hook_stop(); }
+" UIOHOOK_LINKS)
+
+if(NOT UIOHOOK_LINKS)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_st_bits "64-bit")
+        set(_st_other "32-bit")
+    else()
+        set(_st_bits "32-bit")
+        set(_st_other "64-bit")
+    endif()
+
+    set(_st_hint "")
+    if(MSVC)
+        string(CONCAT _st_hint
+            "\n"
+            "  On Windows this is nearly always an architecture mismatch. This build is\n"
+            "  ${_st_bits}; a ${_st_other} libuiohook is rejected with LNK4272 and then\n"
+            "  ignored, which surfaces later as unresolved hook_run / hook_stop /\n"
+            "  hook_set_dispatch_proc / hook_post_event.\n"
+            "\n"
+            "  Confirm with:\n"
+            "      dumpbin /headers \"${UIOHOOK_LIBRARY}\" | findstr machine\n"
+            "\n"
+            "  Rebuild libuiohook into a *fresh* build directory — a CMake build tree\n"
+            "  cannot change platform in place:\n"
+            "      cmake -S <libuiohook> -B <libuiohook>/build-x64 -A x64 \\\n"
+            "            -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=<prefix>\n"
+            "      cmake --build <libuiohook>/build-x64 --config Release\n"
+            "      cmake --install <libuiohook>/build-x64 --config Release\n"
+            "\n"
+            "  See WINDOWS-BUILD.md.\n")
+    endif()
+
+    message(FATAL_ERROR
+        "libuiohook was found at:\n"
+        "    ${UIOHOOK_LIBRARY}\n"
+        "  but a one-line test program cannot link against it.\n"
+        "${_st_hint}"
+        "  Alternatively point -DUIOHOOK_ROOT=<prefix> at a working build.")
+endif()
+
+# --- probe 2: which dispatch signature? -------------------------------------
+#
+# libuiohook 1.3 gave hook_set_dispatch_proc a user-data pointer. Detect it
+# rather than guessing from a version number, because distributions patch both
+# ways.
 check_cxx_source_compiles("
     #include <uiohook.h>
     static void proc(uiohook_event* const, void*) {}
     int main() { hook_set_dispatch_proc(&proc, nullptr); return 0; }
 " UIOHOOK_DISPATCH_HAS_USERDATA)
+
 unset(CMAKE_REQUIRED_INCLUDES)
 unset(CMAKE_REQUIRED_LIBRARIES)
 
@@ -152,6 +217,7 @@ add_subdirectory(qml/components)
 qt_add_executable(schnellerTyp-e
     src/main.cpp
     src/app/AppController.cpp
+    src/app/Diagnostics.cpp
     src/app/RuleSetLoader.cpp
     src/app/Settings.cpp
     src/app/TrayController.cpp
@@ -186,6 +252,26 @@ target_link_libraries(schnellerTyp-e PRIVATE
     Qt6::Widgets
 )
 
+if(WIN32)
+    # dbghelp turns the return addresses captured by the crash handler in
+    # Diagnostics.cpp into named frames, using the .pdb the build already
+    # produces. It ships with Windows, so there is nothing to install.
+    target_link_libraries(schnellerTyp-e PRIVATE dbghelp)
+endif()
+
+if(MSVC)
+    # Emit a .pdb in every configuration, not just Debug. A crash handler is
+    # only as useful as the symbols sitting next to the binary, and /DEBUG does
+    # not affect the generated code — /OPT:REF,ICF put back the two things it
+    # would otherwise disable.
+    target_compile_options(schnellerTyp-e PRIVATE $<$<NOT:$<CONFIG:Debug>>:/Zi>)
+    target_link_options(schnellerTyp-e PRIVATE
+        $<$<NOT:$<CONFIG:Debug>>:/DEBUG>
+        $<$<NOT:$<CONFIG:Debug>>:/OPT:REF>
+        $<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>
+    )
+endif()
+
 # --- warnings ---------------------------------------------------------------
 
 if(MSVC)
@@ -215,6 +301,21 @@ endforeach()
 
 if(WIN32)
     set_target_properties(schnellerTyp-e PROPERTIES WIN32_EXECUTABLE ON)
+
+    # Icon and version resource. Configured rather than used verbatim so the
+    # version in Explorer's Properties pane can never drift from project().
+    # The icon path is absolute because rc.exe resolves relative paths against
+    # its own working directory, not the .rc file's.
+    set(SCHNELLERTYPE_ICON_PATH
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/schnellerTyp-e.ico")
+    file(TO_NATIVE_PATH "${SCHNELLERTYPE_ICON_PATH}" SCHNELLERTYPE_ICON_PATH)
+    string(REPLACE "\\" "\\\\" SCHNELLERTYPE_ICON_PATH "${SCHNELLERTYPE_ICON_PATH}")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/schnellerTyp-e.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/schnellerTyp-e.rc"
+        @ONLY
+    )
+    target_sources(schnellerTyp-e PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/schnellerTyp-e.rc")
 
     # libuiohook is normally built as a DLL. Windows has no rpath, so the DLL
     # has to sit next to the executable or the app dies at startup with a dialog

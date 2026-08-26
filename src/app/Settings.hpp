@@ -26,6 +26,11 @@ public:
     [[nodiscard]] bool startHookOnLaunch() const;
     void               setStartHookOnLaunch(bool value);
 
+    /// The modifier-only shortcut that cycles language, as one of the strings
+    /// HookService::chordToString() produces.
+    [[nodiscard]] QString cycleChord() const;
+    void                  setCycleChord(const QString& chord);
+
     /// Per-engine option maps, stored under "engines/<id>/<key>".
     [[nodiscard]] EngineOptions engineOptions(const QString& engineId) const;
     void setEngineOptions(const QString& engineId, const EngineOptions& options);

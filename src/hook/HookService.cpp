@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -19,10 +20,31 @@ namespace {
 /// time, so a file-static pointer is the simplest correct bridge.
 std::atomic<HookService*> gActiveService{nullptr};
 
+/// True when the named environment variable is set to something non-empty.
+///
+/// MSVC deprecates std::getenv (C4996) in favour of _dupenv_s, which allocates
+/// rather than returning a pointer into the environment block. Wrapping both
+/// keeps the call site honest instead of silencing the warning wholesale.
+[[nodiscard]] bool environmentFlag(const char* name)
+{
+#if defined(_MSC_VER)
+    char*       value  = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
+        return false;
+    const bool set = value[0] != '\0';
+    std::free(value);
+    return set;
+#else
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+#endif
+}
+
 /// SCHNELLERTYPE_DEBUG=1 traces every keystroke and every edit to stderr. The
 /// hook is the one part of the program that cannot be unit-tested, so it keeps
 /// a way to see what it is doing on a real desktop.
-const bool gTrace = std::getenv("SCHNELLERTYPE_DEBUG") != nullptr;
+const bool gTrace = environmentFlag("SCHNELLERTYPE_DEBUG");
 
 /// How long after an injection the hook keeps ignoring key events. Long enough
 /// for the platform to deliver the events we just generated, short enough that
@@ -224,12 +246,22 @@ void HookService::handleEvent(void* rawEvent)
     case EVENT_MOUSE_PRESSED:
     case EVENT_MOUSE_WHEEL:
         // The caret probably moved, so the word buffer no longer describes
-        // what is on screen.
+        // what is on screen. A click also ends any chord in progress: a
+        // Ctrl+Shift+click is a selection gesture, not a language switch.
+        cancelChord();
         resetEngineState();
         return;
 
     case EVENT_KEY_PRESSED:
         handleKeyPressed(rawEvent);
+        return;
+
+    case EVENT_KEY_RELEASED:
+        // Releases are otherwise of no interest: the engines are driven by
+        // presses, and the injectors never synthesise a modifier, so nothing
+        // here can be an event of our own.
+        trackChordRelease(static_cast<std::uint16_t>(event->data.keyboard.keycode),
+                          static_cast<std::uint16_t>(event->mask));
         return;
 
     default:
@@ -250,6 +282,12 @@ void HookService::handleKeyPressed(void* rawEvent)
         syntheticPending_.fetch_sub(1, std::memory_order_acq_rel);
         return;
     }
+
+    // Before the master switch, not after: switching the IME back on is one of
+    // the things the chord exists to do, and it cannot do that from a branch
+    // that only runs while it is already on.
+    trackChordPress(static_cast<std::uint16_t>(event->data.keyboard.keycode),
+                    static_cast<std::uint16_t>(event->mask));
 
     if (!enabled_.load())
         return;
@@ -288,6 +326,151 @@ void HookService::handleKeyPressed(void* rawEvent)
         else
             enqueue(Edit{result.backspaces + 1, std::move(result.text)});
     }
+}
+
+// --- modifier-only shortcut ------------------------------------------------
+//
+// Deliberately driven by libuiohook's modifier mask rather than by tracking
+// which physical keys are held. libuiohook updates the mask before dispatching
+// a modifier event — set on press, cleared on release — so the mask on the
+// event is already the state *after* that key changed. That makes left and
+// right Ctrl interchangeable for free, and it self-heals: if a release is
+// missed because the window lost focus mid-chord, the next event carries the
+// truth instead of a counter that has drifted.
+
+namespace {
+
+enum ModifierBit : unsigned {
+    ModCtrl  = 1u << 0,
+    ModShift = 1u << 1,
+    ModAlt   = 1u << 2,
+};
+
+[[nodiscard]] unsigned modifiersFromMask(std::uint16_t mask)
+{
+    // The _L/_R constants, spelled out and parenthesised. uiohook's combined
+    // MASK_CTRL is `MASK_CTRL_L | MASK_CTRL_R` with no parentheses of its own,
+    // so `mask & MASK_CTRL` parses as `(mask & MASK_CTRL_L) | MASK_CTRL_R` and
+    // is never zero — the chord would have fired on any single modifier.
+    // KeyMapper::fromPressed() already avoids the macro for the same reason.
+    unsigned bits = 0;
+    if ((mask & (MASK_CTRL_L | MASK_CTRL_R)) != 0)
+        bits |= ModCtrl;
+    if ((mask & (MASK_SHIFT_L | MASK_SHIFT_R)) != 0)
+        bits |= ModShift;
+    if ((mask & (MASK_ALT_L | MASK_ALT_R)) != 0)
+        bits |= ModAlt;
+    return bits;
+}
+
+/// The modifiers a chord requires, or 0 for Chord::None.
+[[nodiscard]] unsigned modifiersFor(HookService::Chord chord)
+{
+    switch (chord) {
+    case HookService::Chord::CtrlShift: return ModCtrl | ModShift;
+    case HookService::Chord::CtrlAlt:   return ModCtrl | ModAlt;
+    case HookService::Chord::AltShift:  return ModAlt | ModShift;
+    case HookService::Chord::None:      break;
+    }
+    return 0;
+}
+
+/// The modifier a key *is*, or 0 when it is an ordinary key.
+[[nodiscard]] unsigned modifierForKeycode(std::uint16_t keycode)
+{
+    switch (keycode) {
+    case VC_CONTROL_L:
+    case VC_CONTROL_R: return ModCtrl;
+    case VC_SHIFT_L:
+    case VC_SHIFT_R:   return ModShift;
+    case VC_ALT_L:
+    case VC_ALT_R:     return ModAlt;
+    default:           return 0;
+    }
+}
+
+} // namespace
+
+void HookService::trackChordPress(std::uint16_t keycode, std::uint16_t mask)
+{
+    const unsigned wanted = modifiersFor(chord_.load());
+    if (wanted == 0)
+        return;
+
+    if (modifierForKeycode(keycode) == 0) {
+        // An ordinary key went down while the modifiers were held, so this is
+        // a normal shortcut or normal typing. Stand down until every modifier
+        // has been released and pressed again.
+        chordArmed_ = false;
+        return;
+    }
+
+    // Arm only on the press that completes the set, so Ctrl alone never arms.
+    if ((modifiersFromMask(mask) & wanted) == wanted)
+        chordArmed_ = true;
+}
+
+void HookService::trackChordRelease(std::uint16_t keycode, std::uint16_t mask)
+{
+    const unsigned wanted = modifiersFor(chord_.load());
+    if (wanted == 0 || !chordArmed_)
+        return;
+
+    const unsigned released = modifierForKeycode(keycode);
+    if ((released & wanted) == 0)
+        return;
+
+    // Fire on the first of the chord's modifiers to come back up, then stand
+    // down so letting go of the second one does not fire again.
+    chordArmed_ = false;
+    if (gTrace)
+        std::fprintf(stderr, "[st] chord fired (mask now 0x%04X)\n", unsigned(mask));
+    if (shortcutCallback_)
+        shortcutCallback_();
+}
+
+HookService::Chord HookService::chordFromString(std::string_view text)
+{
+    if (text == "ctrl+shift")
+        return Chord::CtrlShift;
+    if (text == "ctrl+alt")
+        return Chord::CtrlAlt;
+    if (text == "alt+shift")
+        return Chord::AltShift;
+    return Chord::None;
+}
+
+const char* HookService::chordToString(Chord chord)
+{
+    switch (chord) {
+    case Chord::CtrlShift: return "ctrl+shift";
+    case Chord::CtrlAlt:   return "ctrl+alt";
+    case Chord::AltShift:  return "alt+shift";
+    case Chord::None:      break;
+    }
+    return "none";
+}
+
+const char* HookService::chordDisplayName(Chord chord)
+{
+    switch (chord) {
+#if defined(SCHNELLERTYPE_PLATFORM_MACOS)
+    case Chord::CtrlShift: return "Control + Shift";
+    case Chord::CtrlAlt:   return "Control + Option";
+    case Chord::AltShift:  return "Option + Shift";
+#else
+    case Chord::CtrlShift: return "Ctrl + Shift";
+    case Chord::CtrlAlt:   return "Ctrl + Alt";
+    case Chord::AltShift:  return "Alt + Shift";
+#endif
+    case Chord::None:      break;
+    }
+    return "None";
+}
+
+void HookService::setShortcutCallback(ShortcutCallback callback)
+{
+    shortcutCallback_ = std::move(callback);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,8 +8,9 @@ Rectangle {
 
     property string text: ""
     property bool primary: false
-    property bool enabled: true
     signal clicked()
+
+    // See ToggleSwitch.qml: Item.enabled must not be shadowed.
 
     implicitWidth: label.implicitWidth + 32
     implicitHeight: 34
@@ -36,7 +37,6 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        enabled: root.enabled
         cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.clicked()
     }

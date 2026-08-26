@@ -20,7 +20,35 @@ if(TARGET UIOHook::UIOHook)
     return()
 endif()
 
-# --- hints ------------------------------------------------------------------
+# --- an explicit root wins outright -----------------------------------------
+#
+# When the caller says -DUIOHOOK_ROOT=<prefix> they mean that one, so search it
+# alone first. Without this, a hint from pkg-config for a system-wide install
+# is consulted earlier and silently wins, and the build links against a
+# libuiohook the caller did not choose — which is impossible to see from the
+# outside and very annoying when the two differ in version or architecture.
+
+set(_st_uiohook_root "${UIOHOOK_ROOT}")
+if(NOT _st_uiohook_root)
+    set(_st_uiohook_root "$ENV{UIOHOOK_ROOT}")
+endif()
+
+if(_st_uiohook_root)
+    find_path(UIOHOOK_INCLUDE_DIR
+        NAMES uiohook.h
+        HINTS "${_st_uiohook_root}"
+        PATH_SUFFIXES include
+        NO_DEFAULT_PATH
+    )
+    find_library(UIOHOOK_LIBRARY
+        NAMES uiohook libuiohook
+        HINTS "${_st_uiohook_root}"
+        PATH_SUFFIXES lib lib64 bin
+        NO_DEFAULT_PATH
+    )
+endif()
+
+# --- otherwise search normally, with pkg-config as a hint -------------------
 
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
@@ -29,13 +57,13 @@ endif()
 
 find_path(UIOHOOK_INCLUDE_DIR
     NAMES uiohook.h
-    HINTS ${PC_UIOHOOK_INCLUDE_DIRS} ${UIOHOOK_ROOT} $ENV{UIOHOOK_ROOT}
+    HINTS ${PC_UIOHOOK_INCLUDE_DIRS}
     PATH_SUFFIXES include
 )
 
 find_library(UIOHOOK_LIBRARY
     NAMES uiohook libuiohook
-    HINTS ${PC_UIOHOOK_LIBRARY_DIRS} ${UIOHOOK_ROOT} $ENV{UIOHOOK_ROOT}
+    HINTS ${PC_UIOHOOK_LIBRARY_DIRS}
     PATH_SUFFIXES lib lib64 bin
 )
 
