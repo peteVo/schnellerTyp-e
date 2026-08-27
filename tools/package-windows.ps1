@@ -241,6 +241,68 @@ if ($crtMissing) {
 $stillMissing = $crtNeeded | Where-Object { -not (Test-Path (Join-Path $stageDir $_)) }
 if ($stillMissing) { Fail "Visual C++ runtime still incomplete: $($stillMissing -join ', ')" }
 
+# --- no debug binaries -----------------------------------------------------
+#
+# This is the check that was missing when this project shipped a package which
+# failed on the recipient's machine with "ucrtbased.dll was not found". The exe
+# was a clean Release build; uiohook.dll, built months earlier, was not, and a
+# Debug binary drags in the debug C runtime, which Microsoft does not
+# redistribute and which exists only where Visual Studio is installed.
+#
+# The smoke test below cannot catch this. The build machine has Visual Studio,
+# so the debug runtime is present and the program starts perfectly — the one
+# machine in the world where the bug is invisible. Only inspecting what the
+# binaries actually import will do.
+
+Write-Step 'Checking every binary for debug-runtime dependencies'
+
+$debugRuntimes = @(
+    'vcruntime140d.dll', 'vcruntime140_1d.dll',
+    'msvcp140d.dll', 'msvcp140_1d.dll', 'msvcp140_2d.dll',
+    'ucrtbased.dll'
+)
+$readImports = Join-Path $PSScriptRoot 'Get-PEImports.ps1'
+$offenders   = @()
+
+Get-ChildItem -Path $stageDir -Recurse -Include '*.exe', '*.dll' | ForEach-Object {
+    $file = $_
+    try {
+        $needs = & $readImports -Path $file.FullName |
+                 Where-Object { $debugRuntimes -contains $_.ToLowerInvariant() }
+    } catch {
+        Write-Note "could not read imports of $($file.Name): $($_.Exception.Message)"
+        return
+    }
+    if ($needs) {
+        $offenders += [pscustomobject]@{
+            File  = $file.FullName.Substring($stageDir.Length + 1)
+            Needs = ($needs -join ', ')
+        }
+    }
+}
+
+if ($offenders) {
+    $list = ($offenders | ForEach-Object { "    {0}  ->  {1}" -f $_.File, $_.Needs }) -join "`n"
+    Fail @"
+Debug binaries in the package. This would fail on any machine without Visual
+Studio installed, with "the code execution cannot proceed because
+ucrtbased.dll was not found" — and it would still start perfectly here,
+because this machine has the debug runtime.
+
+$list
+
+If uiohook.dll is listed, rebuild libuiohook in Release:
+
+    .\tools\rebuild-libuiohook-x64.ps1
+
+If a Qt DLL is listed, windeployqt deployed the debug Qt. Check that the build
+really was Release: this script configures a fresh tree with
+-DCMAKE_BUILD_TYPE=Release, so a stale $BuildDir is the usual cause — delete
+it and run again.
+"@
+}
+Write-Ok "$((Get-ChildItem -Path $stageDir -Recurse -Include '*.exe','*.dll').Count) binaries, all Release."
+
 # --- documents and licences ------------------------------------------------
 
 Write-Step 'Adding documents and licences'

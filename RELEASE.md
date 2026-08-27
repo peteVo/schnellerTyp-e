@@ -216,3 +216,28 @@ Without `gh`:
 | `A copy of schnellerTyp-e is already running` | Quit it from the tray, then re-run. |
 | `The staged executable exited immediately` | The script prints the log underneath. A missing DLL names itself there. |
 | `Tests failed` | A real regression — fix it rather than packaging around it. |
+| `Debug binaries in the package` | Named in the message. For `uiohook.dll`, run `.\tools\rebuild-libuiohook-x64.ps1`. See below. |
+
+### "ucrtbased.dll was not found" on someone else's machine
+
+The `D` in `ucrtbased.dll`, `VCRUNTIME140D.dll` and `MSVCP140D.dll` means
+*debug*. Microsoft does not redistribute the debug runtime — it ships with
+Visual Studio — so a package containing any Debug binary runs perfectly on your
+machine and fails on everyone else's.
+
+The trap is that **your machine cannot notice**. It has Visual Studio, so the
+debug runtime is present and the program starts. It is the one machine in the
+world where the bug is invisible, which is why the launch smoke test is not
+enough on its own.
+
+The packaging script now reads the import table of every `.exe` and `.dll` it
+stages and refuses to build the zip if any of them needs a debug runtime, so
+this cannot ship again. `tools\rebuild-libuiohook-x64.ps1` checks the DLL it
+produces for the same thing, catching it at the source.
+
+If it happens anyway, find the culprit yourself:
+
+```powershell
+Get-ChildItem dist\schnellerTyp-e-0.1.0-windows-x64 -Recurse -Include *.exe,*.dll |
+    ForEach-Object { "{0}: {1}" -f $_.Name, ((.\tools\Get-PEImports.ps1 $_.FullName) -join ', ') }
+```

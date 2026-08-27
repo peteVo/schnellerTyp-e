@@ -6,4 +6,6 @@ compile_commands.json
 *.user
 .DS_Store
 WINDOWS-BUILD.md
+RELEASE-NOTES.md
+RELEASE.md
 dist/

@@ -134,16 +134,40 @@ C:\Qt\6.8.2\msvc2022_64\bin\windeployqt.exe --qmldir qml build\schnellerTyp-e.ex
 ### 1. Prerequisites
 
 ```bash
-brew install cmake ninja qt@6 libuiohook
+brew install cmake ninja qt
 ```
+
+**libuiohook is not in Homebrew** — there is no `brew install libuiohook`, so it
+has to be built. It takes about ten seconds:
+
+```bash
+git clone --depth 1 https://github.com/kwhat/libuiohook.git ~/src/libuiohook
+cmake -S ~/src/libuiohook -B ~/src/libuiohook/build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=ON \
+      -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build ~/src/libuiohook/build --parallel
+cmake --install ~/src/libuiohook/build
+```
+
+Installing into `$HOME/.local` rather than `/usr/local` keeps it out of
+Homebrew's way and needs no `sudo`. Any prefix works; pass whichever you used as
+`-DUIOHOOK_ROOT` below.
 
 ### 2. Build
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)"
+      -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
+      -DUIOHOOK_ROOT="$HOME/.local"
 cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
+
+`$(brew --prefix qt)` resolves to `/opt/homebrew/opt/qt` on Apple Silicon and
+`/usr/local/opt/qt` on Intel, so the same line works on both. The Homebrew
+formula is `qt` (currently Qt 6); older instructions elsewhere say `qt@6`, which
+is at best an alias and at worst a package that no longer resolves.
 
 The build produces `build/schnellerTyp-e.app` and ad-hoc signs it, because
 macOS grants Accessibility to a *signed identity*, not to a path.
@@ -201,22 +225,40 @@ sudo pacman -S --needed base-devel cmake ninja git \
                         qt6-base qt6-declarative \
                         libx11 libxtst libxi libxkbcommon libxkbcommon-x11
 
-# libuiohook from the AUR — with an AUR helper:
+# libuiohook comes from the AUR:
 paru -S libuiohook          # or: yay -S libuiohook
-
-# ...or by hand:
-git clone https://aur.archlinux.org/libuiohook.git
-cd libuiohook && makepkg -si && cd ..
 ```
 
-Then either build directly:
+If that package has gone missing or is broken — it is user-submitted, so it can
+— build the library from upstream instead. This route depends on nobody and
+works on every distribution:
+
+```bash
+git clone --depth 1 https://github.com/kwhat/libuiohook.git ~/src/libuiohook
+cmake -S ~/src/libuiohook -B ~/src/libuiohook/build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=ON \
+      -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build ~/src/libuiohook/build --parallel
+cmake --install ~/src/libuiohook/build
+```
+
+Then build directly:
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+# ...or, if you built libuiohook into your own prefix above:
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUIOHOOK_ROOT="$HOME/.local"
+
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/schnellerTyp-e
 ```
+
+`-DUIOHOOK_ROOT` is searched before pkg-config and before any system copy, so a
+prefix build wins over a stale `/usr/lib` one rather than silently losing to it.
+The configure output names the library it settled on — check that line if a link
+error mentions `hook_run`.
 
 or build a package, which also installs the desktop entry and an autostart file:
 
