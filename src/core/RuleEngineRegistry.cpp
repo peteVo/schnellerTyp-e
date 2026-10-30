@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "core/RuleEngineRegistry.hpp"
 
+#include "core/auto/AutoRuleEngine.hpp"
 #include "core/german/GermanRuleEngine.hpp"
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
 
@@ -22,6 +23,8 @@ void RuleEngineRegistry::registerBuiltins()
             return;
         builtinsRegistered_ = true;
     }
+    registerEngine({"auto", "Automatic", "AUTO"},
+                   [] { return std::make_unique<AutoRuleEngine>(); });
     registerEngine({"de", "German (Umlaut)", "DE"},
                    [] { return std::make_unique<GermanRuleEngine>(); });
     registerEngine({"vi", "Vietnamese", "VN"},

@@ -32,6 +32,17 @@ component.
 
 ## Third-party dependencies
 
+Automatic-mode frequency tables in src/core/auto/FrequencyData.inc are modified,
+filtered subsets of wordfreq 3.1.1 data by Robyn Speer, licensed under CC BY-SA
+4.0. The subsets contain 30,000 English, 40,000 German and 10,403 Vietnamese
+entries. The complete upstream attribution and source-specific conditions are
+preserved in src/core/auto/data/NOTICE-wordfreq.md; the full CC BY-SA 4.0 license
+is beside it. These data files remain CC BY-SA 4.0 and do not change the MIT
+license of independently written application code.
+
+The optional Linux addon dynamically uses Fcitx 5 (LGPL-2.1-or-later). The
+optional macOS input source uses Apple's InputMethodKit/AppKit frameworks.
+
 | Component | Licence | Linked how |
 |---|---|---|
 | Qt 6 (Core, Gui, Qml, Quick, QuickControls2, Widgets) | LGPL-3.0 or commercial | dynamically |

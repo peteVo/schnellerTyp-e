@@ -1,125 +1,97 @@
 # schnellerTyp-e
 
-A cross-platform input method editor and text transformation tool, in the spirit
-of UniKey. It runs in the system tray, watches the keyboard globally, and
-rewrites what you typed in whichever application has focus.
+A Windows-first typing assistant for mixing English, Vietnamese and German
+without switching language modes between words. C++20, Qt 6 and QML.
 
-- **German** — `ae → ä`, `oe → ö`, `ue → ü`, `ss → ß`, with a dictionary that
-  knows `Dauer`, `Duell`, `Wasser` and `aussehen` are not umlauts.
-- **Vietnamese** — Telex and VNI, with free tone marking, correct tone
-  placement, spelling check and auto-restore.
-- **Anything else** — a new language or a set of text expansions is a JSON file
-  in the config folder, or one `registerEngine()` call in C++.
-- **One-chord switching** — tap **Ctrl + Shift** and let go to step German →
-  Vietnamese → … → Off → German, anywhere, in any application.
+## Automatic typing
 
-Windows, macOS and Linux/X11. Modern C++20, CMake, Qt 6 with a QML dark-mode
-settings window, libuiohook for capture and a native backend per platform for
-injection.
+Select **Automatic** once. Type Vietnamese using Telex or VNI and German using
+ae, oe, ue and ss. The current word can adjust as you type; Space settles it.
+For example, with Telex:
 
-**[BUILD.md](BUILD.md) has the build instructions, the per-OS permission notes
-and the user guide.** [RELEASE.md](RELEASE.md) covers producing a portable
-Windows zip to hand to someone who does not build software. Windows users following the Qt Creator route can use
-**[WINDOWS-BUILD.md](WINDOWS-BUILD.md)**, which is the same thing condensed to
-one path.
+    Keys:   hoom nay tooi ddeens New York
+    Result: hôm nay tôi đến New York
 
----
+    Keys:   tooi ddeens Berlin und moechte coffee
+    Result: tôi đến Berlin und möchte coffee
 
-## Layout
+Automatic compares literal input with Vietnamese and German candidates using
+80,403 offline word-frequency entries and a small amount of language context.
+Known English words, unknown names and ambiguous words favour literal input.
+This is a conservative statistical heuristic; identical keys can express
+different intentions, so it cannot promise perfect automatic interpretation.
 
-```
-src/core/     the rule engines. No Qt, no OS headers, no I/O.
-src/hook/     libuiohook capture, key mapping, per-platform injection.
-src/app/      the Qt bridge: AppController, QSettings, QSystemTrayIcon.
-qml/          the settings window and its components.
-tests/        engine tests — no display server required.
-packaging/    Info.plist, entitlements, .desktop, PKGBUILD.
-config/       annotated examples of the user-editable rule files.
-```
+- Press **Escape before Space** to restore the original keys of the current word.
+- Add names or technical terms under **Preferences → Keep these words literal**.
+- Addresses, paths, identifiers and contractions are kept literal once their
+  identifying punctuation is typed.
+- German and Vietnamese manual modes and custom JSON profiles remain available.
+- New installations default to Automatic; existing saved mode choices are kept.
 
-The split at `src/core` is the load-bearing one. Every rule the program applies
-lives behind one small interface:
+Everything needed for typing runs locally. No account, network service or
+typing-history collection is required. Optional debug tracing can include
+keystrokes; leave SCHNELLERTYPE_DEBUG unset for normal use.
 
-```cpp
-class LanguageRuleEngine {
-    virtual void         reset() noexcept = 0;
-    virtual EngineResult processKey(const KeyEvent&) = 0;
-};
+## Desktop interface
 
-struct EngineResult {
-    bool           handled;      // swallow the original keystroke
-    int            backspaces;   // delete this many characters
-    std::u32string text;         // then type this
-};
-```
+**Typing** contains the mode selector and a live practice field using the real
+configured engine. **Preferences** contains Telex/VNI, German rules, personal
+literal words and shortcuts. **Setup** contains availability, permissions and
+custom-rule recovery. The interface follows the system light/dark appearance
+and supports keyboard navigation.
 
-"Delete N, then type T" is the only primitive. Composing a Vietnamese syllable,
-reverting a German digraph, expanding a macro and restoring a mistyped English
-word are all expressed as that.
+The app stays in the tray when its settings window closes. Left-click the tray
+to pause/resume, double-click for settings, and right-click for its menu.
+Ctrl+Shift cycles Automatic → German → Vietnamese → custom profiles → Off.
+Preferences can change or disable that shortcut. Select Automatic to mix all
+three languages within one mode.
 
-Both engines work the same way: keep the plain characters the user actually
-typed, re-derive the whole word after every keystroke, and emit the difference
-against what is already on screen. That is what makes free tone marking, tone
-migration (`toa` → `toán` moves the mark) and self-correcting German exceptions
-fall out without special cases — and it is why the engines are pure functions of
-the keystroke sequence, with no timers to lose a race against.
+## Windows
 
-## Threads
+Use the portable Windows x64 zip: unzip the whole folder, then run
+schnellerTyp-e.exe. A local build is unsigned. Higher-privilege windows and
+applications that reject simulated input require separate compatibility testing.
+The settings/practice window intentionally accepts literal keys; the global
+hook does not transform its own process.
 
-| Thread | Does |
-|---|---|
-| GUI | Qt event loop, `AppController`. Never blocks on the hook. |
-| hook | `hook_run()`. Classifies each key, runs the engine, suppresses where the OS allows. |
-| injector | Drains a FIFO of edits and performs the actual `SendInput` / `CGEventPost` / `XTestFakeKeyEvent`. |
+[BUILD.md](BUILD.md) describes the full build prerequisites. For a matching
+MinGW Qt/toolchain build, tools/package-windows-mingw.ps1 assembles a portable
+zip and its dependencies. tools/package-windows.ps1 is the MSVC packaging path.
 
-Injection is off the hook thread on purpose: injecting from inside a Windows
-low-level hook callback can deadlock against that same hook. Events the program
-generates itself are recognised by an exact counter of pending synthetic key
-presses, charged before the events exist.
+## Linux and macOS
 
-## Platform differences that shape the design
+Optional native adapters use Fcitx 5 on Linux and InputMethodKit on macOS. They
+share the language engine and saved built-in preferences with the desktop app.
+See [PLATFORMS.md](PLATFORMS.md) for build flags, installation and verification
+limits. The legacy Linux/X11 and macOS event-injection backends remain available.
+The X11 backend is not a native Wayland solution. Avoid running a native input
+method and the legacy hook against the same typing session.
 
-| | Windows | macOS | Linux/X11 |
-|---|---|---|---|
-| Capture | `WH_KEYBOARD_LL` | `CGEventTap` | `XRecord` |
-| Suppress the original key | yes | yes | **no** |
-| Injection | `SendInput` + `KEYEVENTF_UNICODE` | `CGEventKeyboardSetUnicodeString` | `XTest` + borrowed keycode |
-| Permission | none | Accessibility | none (X11 session required) |
+## Build and tests
 
-X11's inability to suppress is the one difference visible in behaviour: the
-keystroke has already reached the application, so every edit sends one extra
-backspace to erase it, and the edit races the next keystroke. Measured, that
-holds up to about 200 words per minute. BUILD.md explains it in full, along with
-why Wayland is not supported.
+The engine tests require only a C++20 compiler and CMake:
 
-## Testing
+    cmake -S . -B build-core -DSCHNELLERTYPE_BUILD_APP=OFF
+    cmake --build build-core --config Release --parallel
+    ctest --test-dir build-core -C Release --output-on-failure
 
-```bash
-ctest --test-dir build --output-on-failure
-```
+The full desktop app additionally requires Qt 6.4+ and libuiohook. Tests simulate
+the final visible text, including mixed languages, editing, reset boundaries,
+literal words and native composition. The optional Windows scratch-window probe
+checks the real hook/injection path without editing user documents.
 
-About a hundred keystroke sequences through the German, Vietnamese and
-JSON-driven engines, checking the text that would end up on screen rather than
-the struct the engine returned. The hook and the injectors are covered by
-running the real thing against a real X server and reading back what a text
-field received; `SCHNELLERTYPE_DEBUG=1` traces every keystroke and every edit.
+    src/core/       platform-independent rules, Automatic and composition session
+    src/hook/       keyboard capture and legacy native injectors
+    src/app/        shared preferences, Qt bridge and tray
+    src/platform/   optional Fcitx 5 and InputMethodKit hosts
+    qml/            settings and practice interface
+    tests/          core, native-preference and opt-in Windows integration checks
+    config/         custom rules and exception examples
 
-## Relationship to UniKey
+## Data and attribution
 
-UniKey 3.62's source was used as a **behavioural reference only** — what a
-Vietnamese typist expects `nuwowcs`, `toasn` or `ass` to do. No code and no
-tables from it are present here: the composition tables are generated from
-Unicode normalisation, the syllable model and the tone-placement rules were
-written from Vietnamese orthography, and the engine is a different design
-(decompose-and-re-render rather than UniKey's packed bit-table state machine).
-
-UniKey is GPL-2.0 and copyright Phạm Kim Long; nothing in this repository is
-derived from it. `NOTICE.md` says the same in the form a lawyer would want.
-
-## Status
-
-The engines, the hook, all three injection backends, the tray and the settings
-window are implemented and the German and Vietnamese paths are verified end to
-end on X11. The Windows and macOS backends are written against their documented
-APIs but have not been run on those platforms — that is the first thing to do
-with this repository, and BUILD.md tells you what to expect when you do.
+Application code is MIT. The filtered word-frequency data is CC BY-SA 4.0,
+derived from wordfreq 3.1.1 by Robyn Speer. Its full attribution and license are
+in src/core/auto/data/; tools/generate-frequency-data.py reproduces the
+checked-in tables. Python/wordfreq is development tooling, not an app dependency.
+See [NOTICE.md](NOTICE.md) for all attributions and the relationship to UniKey.

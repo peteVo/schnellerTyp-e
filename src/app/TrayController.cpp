@@ -20,7 +20,7 @@ namespace {
 
 // Same palette as the QML side, so the tray badge does not look like it belongs
 // to a different application.
-const QColor kActiveBackground(0x6D, 0x28, 0xD9);   // violet-700
+const QColor kActiveBackground(0x00, 0x6D, 0x62);
 const QColor kActiveText(0xFA, 0xFA, 0xFA);
 const QColor kInactiveBackground(0x3F, 0x3F, 0x46); // zinc-700
 const QColor kInactiveText(0xA1, 0xA1, 0xAA);       // zinc-400

@@ -1,58 +1,52 @@
 pragma Singleton
 
 // SPDX-License-Identifier: MIT
-//
-// One place for every colour, radius and spacing value in the UI.
-// schnellerTyp-e is dark-mode only by design: it is a background utility whose
-// window is opened for a few seconds at a time, and a single well-tuned palette
-// reads better than two half-tuned ones.
 
 import QtQuick
 
 QtObject {
-    // --- surfaces -----------------------------------------------------------
-    readonly property color background:    "#18181b"   // zinc-900
-    readonly property color surface:       "#27272a"   // zinc-800
-    readonly property color surfaceRaised: "#323238"
-    readonly property color border:        "#3f3f46"   // zinc-700
-    readonly property color borderSubtle:  "#2f2f35"
+    readonly property SystemPalette systemPalette: SystemPalette {}
+    readonly property bool dark: systemPalette.window.hsvValue < 0.48
 
-    // --- text ---------------------------------------------------------------
-    readonly property color textPrimary:   "#fafafa"   // zinc-50
-    readonly property color textSecondary: "#a1a1aa"   // zinc-400
-    readonly property color textMuted:     "#71717a"   // zinc-500
+    // A warm paper surface in daylight and a deep green-black surface at night.
+    readonly property color background: dark ? "#14211e" : "#f5f2e9"
+    readonly property color rail: dark ? "#101b18" : "#ede9df"
+    readonly property color surface: dark ? "#1b2b27" : "#fffdf8"
+    readonly property color surfaceRaised: dark ? "#253833" : "#e9e5da"
+    readonly property color outputSurface: dark ? "#192a25" : "#eeece3"
+    readonly property color border: dark ? "#3d514a" : "#c9c8bb"
+    readonly property color borderSubtle: dark ? "#2a3c36" : "#ddd9cd"
 
-    // --- accent -------------------------------------------------------------
-    readonly property color accent:        "#8b5cf6"   // violet-500
-    readonly property color accentStrong:  "#7c3aed"   // violet-600
-    readonly property color accentSoft:    "#312e58"
-    // Named accentText rather than onAccent: a QML property whose name starts
-    // with "on" followed by a capital is parsed as a signal handler.
-    readonly property color accentText:    "#ffffff"
+    readonly property color textPrimary: dark ? "#edf4ee" : "#1d302b"
+    readonly property color textSecondary: dark ? "#b5c8bf" : "#4a6058"
+    readonly property color textMuted: dark ? "#91a69c" : "#64746a"
 
-    // --- semantic -----------------------------------------------------------
-    readonly property color success:       "#22c55e"
-    readonly property color warning:       "#f59e0b"
-    readonly property color danger:        "#ef4444"
+    readonly property color accent: dark ? "#a5e5d3" : "#006d62"
+    readonly property color accentStrong: dark ? "#80cbb7" : "#00574f"
+    readonly property color accentSoft: dark ? "#263f38" : "#dcebe3"
+    readonly property color accentText: dark ? "#10221d" : "#ffffff"
 
-    // --- metrics ------------------------------------------------------------
-    readonly property int radius:      12
-    readonly property int radiusSmall: 8
-    readonly property int gap:         16
-    readonly property int gapSmall:    10
-    readonly property int padding:     18
+    readonly property color success: dark ? "#8dd2a4" : "#286c42"
+    readonly property color warning: dark ? "#f0c77b" : "#805914"
+    readonly property color danger: dark ? "#f29e91" : "#a13b30"
 
-    readonly property int fontSizeTitle:   19
+    readonly property int radius: 12
+    readonly property int radiusSmall: 7
+    readonly property int gap: 18
+    readonly property int gapSmall: 10
+    readonly property int padding: 20
+
+    readonly property int fontSizeTitle: 22
     readonly property int fontSizeSection: 12
-    readonly property int fontSizeBody:    14
-    readonly property int fontSizeSmall:   12
+    readonly property int fontSizeBody: 14
+    readonly property int fontSizeSmall: 12
 
     function statusColor(state) {
         switch (state) {
-        case "running": return success;
-        case "starting": return warning;
-        case "failed": return danger;
-        default: return textMuted;
+        case "running": return success
+        case "starting": return warning
+        case "failed": return danger
+        default: return textMuted
         }
     }
 }

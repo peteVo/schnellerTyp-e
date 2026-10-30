@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(schnellerTyp-e
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "Cross-platform input method editor and text transformation tool"
     LANGUAGES CXX
 )
@@ -29,6 +29,22 @@ endif()
 
 option(SCHNELLERTYPE_BUILD_TESTS "Build the engine unit tests" ON)
 option(SCHNELLERTYPE_WERROR "Treat compiler warnings as errors" OFF)
+option(SCHNELLERTYPE_BUILD_APP "Build the Qt desktop app and legacy hook backend" ON)
+option(SCHNELLERTYPE_BUILD_FCITX5 "Build the native Linux Fcitx 5 input method" OFF)
+option(SCHNELLERTYPE_BUILD_MACOS_INPUT_METHOD "Build the native macOS input source" OFF)
+option(SCHNELLERTYPE_BUILD_INTERACTIVE_TESTS "Build the Windows scratch-window hook probe" OFF)
+
+if(MSVC)
+    set(SCHNELLERTYPE_WARNINGS /W4 /permissive- /utf-8)
+    if(SCHNELLERTYPE_WERROR)
+        list(APPEND SCHNELLERTYPE_WARNINGS /WX)
+    endif()
+else()
+    set(SCHNELLERTYPE_WARNINGS -Wall -Wextra -Wpedantic)
+    if(SCHNELLERTYPE_WERROR)
+        list(APPEND SCHNELLERTYPE_WARNINGS -Werror)
+    endif()
+endif()
 
 # ---------------------------------------------------------------------------
 # Dependencies
@@ -36,6 +52,7 @@ option(SCHNELLERTYPE_WERROR "Treat compiler warnings as errors" OFF)
 
 # 6.4 is the floor so that the Qt shipped by Debian 12 and Ubuntu 24.04 works
 # unmodified; everything newer is fine.
+if(SCHNELLERTYPE_BUILD_APP)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Widgets)
 qt_standard_project_setup(REQUIRES 6.4)
 
@@ -122,6 +139,7 @@ check_cxx_source_compiles("
 
 unset(CMAKE_REQUIRED_INCLUDES)
 unset(CMAKE_REQUIRED_LIBRARIES)
+endif()
 
 # ---------------------------------------------------------------------------
 # Core — no Qt, no OS headers, fully unit-testable
@@ -130,6 +148,8 @@ unset(CMAKE_REQUIRED_LIBRARIES)
 add_library(schnellertype_core STATIC
     src/core/Unicode.cpp
     src/core/RuleEngineRegistry.cpp
+    src/core/auto/AutoRuleEngine.cpp
+    src/core/CompositionSession.cpp
     src/core/german/GermanRuleEngine.cpp
     src/core/vietnamese/VnTables.cpp
     src/core/vietnamese/VietnameseRuleEngine.cpp
@@ -137,11 +157,13 @@ add_library(schnellertype_core STATIC
 )
 target_include_directories(schnellertype_core PUBLIC src)
 set_target_properties(schnellertype_core PROPERTIES POSITION_INDEPENDENT_CODE ON AUTOMOC OFF)
+target_compile_options(schnellertype_core PRIVATE ${SCHNELLERTYPE_WARNINGS})
 
 # ---------------------------------------------------------------------------
 # Hook layer — libuiohook plus one native injector per platform
 # ---------------------------------------------------------------------------
 
+if(SCHNELLERTYPE_BUILD_APP)
 set(SCHNELLERTYPE_HOOK_SOURCES
     src/hook/HookService.cpp
     src/hook/KeyMapper.cpp
@@ -366,6 +388,66 @@ elseif(UNIX)
             DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
 endif()
 
+endif() # SCHNELLERTYPE_BUILD_APP
+
+# Native input methods share the rule engine and saved preferences. Their host
+# owns composition; they have no dependency on libuiohook or Qt Quick.
+if(SCHNELLERTYPE_BUILD_APP OR SCHNELLERTYPE_BUILD_FCITX5 OR SCHNELLERTYPE_BUILD_MACOS_INPUT_METHOD)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Core)
+    add_library(schnellertype_native STATIC src/app/NativeEngine.cpp src/app/Settings.cpp)
+    target_link_libraries(schnellertype_native PUBLIC schnellertype_core Qt6::Core)
+    target_compile_options(schnellertype_native PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    set_target_properties(schnellertype_native PROPERTIES POSITION_INDEPENDENT_CODE ON AUTOMOC OFF)
+endif()
+
+if(SCHNELLERTYPE_BUILD_FCITX5)
+    if(NOT UNIX OR APPLE)
+        message(FATAL_ERROR "The Fcitx 5 input method requires Linux.")
+    endif()
+    find_package(Fcitx5Core REQUIRED)
+    include(GNUInstallDirs)
+    add_library(schnellerTyp-e-fcitx5 MODULE src/platform/fcitx5/Fcitx5Engine.cpp)
+    target_link_libraries(schnellerTyp-e-fcitx5 PRIVATE schnellertype_native Fcitx5::Core)
+    target_compile_options(schnellerTyp-e-fcitx5 PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    set_target_properties(schnellerTyp-e-fcitx5 PROPERTIES AUTOMOC OFF PREFIX "")
+    configure_file(packaging/linux/fcitx5/schnellerTyp-e-fcitx5.conf.in
+                   schnellerTyp-e-fcitx5.conf @ONLY)
+    install(TARGETS schnellerTyp-e-fcitx5 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/fcitx5)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/schnellerTyp-e-fcitx5.conf
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/addon)
+    install(FILES packaging/linux/fcitx5/schnellerTyp-e.conf
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/inputmethod)
+    install(DIRECTORY src/core/auto/data/
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/schnellerTyp-e/wordfreq)
+    install(FILES LICENSE NOTICE.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/schnellerTyp-e)
+endif()
+
+if(SCHNELLERTYPE_BUILD_MACOS_INPUT_METHOD)
+    if(NOT APPLE)
+        message(FATAL_ERROR "The InputMethodKit input source requires macOS.")
+    endif()
+    enable_language(OBJCXX)
+    add_executable(schnellerTyp-e-input-method MACOSX_BUNDLE
+        src/platform/macos/input_method_main.mm src/platform/macos/InputMethodController.mm)
+    target_link_libraries(schnellerTyp-e-input-method PRIVATE schnellertype_native
+        "-framework AppKit" "-framework InputMethodKit" "-framework Carbon")
+    target_compile_options(schnellerTyp-e-input-method PRIVATE -fobjc-arc)
+    set_target_properties(schnellerTyp-e-input-method PROPERTIES
+        AUTOMOC OFF OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON
+        MACOSX_BUNDLE_BUNDLE_NAME "schnellerTyp-e Input"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.schnellertype.inputmethod"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/input-method/Info.plist.in")
+    add_custom_command(TARGET schnellerTyp-e-input-method POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/core/auto/data"
+            "$<TARGET_BUNDLE_DIR:schnellerTyp-e-input-method>/Contents/Resources/licenses/wordfreq"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
+            "$<TARGET_BUNDLE_DIR:schnellerTyp-e-input-method>/Contents/Resources/licenses"
+        VERBATIM)
+    install(TARGETS schnellerTyp-e-input-method BUNDLE DESTINATION "Library/Input Methods")
+endif()
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -377,6 +459,25 @@ if(SCHNELLERTYPE_BUILD_TESTS)
     target_link_libraries(schnellertype_tests PRIVATE schnellertype_core)
     target_compile_options(schnellertype_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
     add_test(NAME engines COMMAND schnellertype_tests)
+    if(TARGET schnellertype_native)
+        add_executable(schnellertype_native_tests tests/test_native.cpp)
+        target_link_libraries(schnellertype_native_tests PRIVATE schnellertype_native)
+        target_compile_options(schnellertype_native_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
+        set_target_properties(schnellertype_native_tests PROPERTIES AUTOMOC OFF)
+        add_test(NAME native-settings COMMAND schnellertype_native_tests)
+    endif()
+endif()
+
+if(WIN32 AND SCHNELLERTYPE_BUILD_APP AND SCHNELLERTYPE_BUILD_INTERACTIVE_TESTS)
+    add_executable(schnellertype_hook_probe tests/windows_hook_probe.cpp)
+    target_link_libraries(schnellertype_hook_probe PRIVATE schnellertype_hook shell32)
+    target_compile_options(schnellertype_hook_probe PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    set_target_properties(schnellertype_hook_probe PROPERTIES AUTOMOC OFF WIN32_EXECUTABLE ON)
+    if(MINGW)
+        target_link_options(schnellertype_hook_probe PRIVATE -municode)
+    endif()
+    # Deliberately not a normal CTest: it creates a scratch window and sends
+    # real keystrokes. Run explicitly on an unlocked Windows desktop.
 endif()
 
 # ---------------------------------------------------------------------------

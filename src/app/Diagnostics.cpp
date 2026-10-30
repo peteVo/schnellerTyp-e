@@ -334,7 +334,9 @@ void install()
     _set_purecall_handler(onPureCall);
     // Do not pop the "this application has requested the Runtime to terminate"
     // dialog; the log is the channel we actually read.
+#  if defined(_MSC_VER)
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#  endif
 #  if defined(_DEBUG)
     for (const int report : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
         _CrtSetReportMode(report, _CRTDBG_MODE_FILE);

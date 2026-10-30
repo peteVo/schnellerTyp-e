@@ -11,6 +11,8 @@
 // returned some plausible struct.
 
 #include "core/RuleEngineRegistry.hpp"
+#include "core/CompositionSession.hpp"
+#include "core/auto/AutoRuleEngine.hpp"
 #include "core/custom/RuleSetEngine.hpp"
 #include "core/german/GermanRuleEngine.hpp"
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
@@ -244,6 +246,8 @@ void testRegistry()
 {
     auto& registry = st::RuleEngineRegistry::instance();
     registry.registerBuiltins();
+    checkTrue("registry/auto", registry.contains("auto"));
+    checkTrue("registry/auto-first", registry.descriptors().front().id == "auto");
     checkTrue("registry/de", registry.contains("de"));
     checkTrue("registry/vi", registry.contains("vi"));
     checkTrue("registry/create", registry.create("vi") != nullptr);
@@ -260,6 +264,95 @@ void testRegistry()
     checkTrue("registry/keeps-builtins", registry.contains("de"));
 }
 
+void testAutomatic()
+{
+    st::AutoRuleEngine engine;
+    check("auto/requested-example", U"hoom nay tooi ddeens New York ",
+          U"hôm nay tôi đến New York ", engine);
+    check("auto/english", U"I have been using new tools at work. ",
+          U"I have been using new tools at work. ", engine);
+    check("auto/english-triggers", U"as is or of for were own our power flower street class ",
+          U"as is or of for were own our power flower street class ", engine);
+    check("auto/names", U"New York Berlin Microsoft Firefox Robert ",
+          U"New York Berlin Microsoft Firefox Robert ", engine);
+    check("auto/vietnamese", U"tooi yeeu tieengs Vieejt ", U"tôi yêu tiếng Việt ", engine);
+    check("auto/vietnamese-free", U"nuocws nguowif toasn ", U"nước người toán ", engine);
+    check("auto/german", U"Ich moechte schoene Aepfel und Wasser. ",
+          U"Ich möchte schöne Äpfel und Wasser. ", engine);
+    check("auto/german-exceptions", U"Dauer Duell Wasser aussehen muessen ",
+          U"Dauer Duell Wasser aussehen müssen ", engine);
+    check("auto/three-languages", U"tooi ddeens Berlin und moechte coffee ",
+          U"tôi đến Berlin und möchte coffee ", engine);
+    check("auto/unknown", U"Zyqwert Fjordson Qwark ", U"Zyqwert Fjordson Qwark ", engine);
+    check("auto/email", U"hoom@tooi.com ", U"hoom@tooi.com ", engine);
+    check("auto/path", U"C:\\users\\tooi\\hoom ", U"C:\\users\\tooi\\hoom ", engine);
+    check("auto/url", U"https://example.com/hoom ", U"https://example.com/hoom ", engine);
+    check("auto/identifier", U"hoom_test ", U"hoom_test ", engine);
+    check("auto/contraction", U"we're don't it's ", U"we're don't it's ", engine);
+    check("auto/number", U"hoom123 ", U"hoom123 ", engine);
+    check("auto/precomposed", U"hôm nay tôi đến New York ", U"hôm nay tôi đến New York ", engine);
+    check("auto/backspace", U"tooi\b ", U"tô ", engine);
+    check("auto/backspace-composed", U"oo\b ", U" ", engine);
+    check("auto/punctuation", U"tooi,New York!", U"tôi,New York!", engine);
+
+    engine.applyOptions({{"method", "vni"}});
+    check("auto/vni", U"ho6m nay to6i d9e6n1 New York ",
+          U"hôm nay tôi đến New York ", engine);
+    engine.applyOptions({{"method", "telex"}, {"literalWords", "hoom\ntooi"}});
+    check("auto/personal-literal", U"Hoom tooi tieengs ", U"Hoom tooi tiếng ", engine);
+
+    engine.applyOptions({{"literalWords", ""}});
+    engine.reset();
+    const auto before = typeKeys(engine, U"tooi");
+    const auto undo = engine.processKey(st::KeyEvent::of(st::KeyKind::Escape));
+    auto screen = before;
+    screen.resize(screen.size() - static_cast<std::size_t>(undo.backspaces));
+    screen += undo.text;
+    checkTrue("auto/escape-restores", undo.handled && screen == U"tooi");
+
+    engine.reset();
+    (void)typeKeys(engine, U"tooi");
+    engine.reset();  // new window/input field must never edit the old word
+    const auto fresh = engine.processKey(st::KeyEvent::character_(U'a'));
+    checkTrue("auto/reset-safe", fresh.backspaces == 0);
+
+    auto chord = st::KeyEvent::character_(U'c');
+    chord.ctrl = true;
+    checkTrue("auto/shortcuts", !engine.processKey(chord).handled);
+    check("auto/bounded-word", std::u32string(1024, U'a') + U" ",
+          std::u32string(1024, U'a') + U" ", engine);
+}
+
+void testComposition()
+{
+    st::CompositionSession session(std::make_unique<st::AutoRuleEngine>());
+    st::CompositionSession::Result result;
+    for (const auto c : U"hoom") {
+        if (c != 0)
+            result = session.processKey(st::KeyEvent::character_(c));
+    }
+    checkTrue("composition/preedit", result.handled && !result.commit && result.text == U"hôm");
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Space));
+    checkTrue("composition/commit-space", result.handled && result.commit && result.text == U"hôm ");
+    result = session.finish();
+    checkTrue("composition/no-double-commit", result.text.empty());
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Backspace));
+    checkTrue("composition/backspace-committed", !result.handled && result.text.empty());
+
+    for (const auto c : U"tooi")
+        if (c != 0)
+            result = session.processKey(st::KeyEvent::character_(c));
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Enter));
+    checkTrue("composition/enter-forwarded", !result.handled && result.commit && result.text == U"tôi");
+    for (const auto c : U"abc")
+        if (c != 0)
+            result = session.processKey(st::KeyEvent::character_(c));
+    session.reset();
+    checkTrue("composition/cancel", session.finish().text.empty());
+    st::CompositionSession disabled(nullptr);
+    checkTrue("composition/disabled", !disabled.processKey(st::KeyEvent::character_(U'a')).handled);
+}
+
 } // namespace
 
 int main()
@@ -269,6 +362,8 @@ int main()
     testVietnameseVni();
     testRuleSet();
     testRegistry();
+    testAutomatic();
+    testComposition();
 
     std::printf("\n%d checks, %d failure(s)\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;

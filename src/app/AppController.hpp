@@ -66,6 +66,8 @@ class AppController : public QObject {
                    NOTIFY deOptionsChanged)
     Q_PROPERTY(bool deUseExceptions READ deUseExceptions WRITE setDeUseExceptions
                    NOTIFY deOptionsChanged)
+    Q_PROPERTY(QString literalWords READ literalWords WRITE setLiteralWords
+                   NOTIFY autoOptionsChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -134,6 +136,8 @@ public:
     void               setDeDoubleKeyRevert(bool value);
     [[nodiscard]] bool deUseExceptions() const { return deOptions_.useExceptions; }
     void               setDeUseExceptions(bool value);
+    [[nodiscard]] QString literalWords() const { return literalWords_; }
+    void                  setLiteralWords(const QString& words);
 
     // --- actions ------------------------------------------------------------
 public slots:
@@ -149,6 +153,7 @@ public slots:
     void reloadCustomRules();
     void showSettings();
     void quit();
+    Q_INVOKABLE QString previewTyping(const QString& raw);
 
 signals:
     void enabledChanged();
@@ -158,6 +163,7 @@ signals:
     void statusChanged();
     void vnOptionsChanged();
     void deOptionsChanged();
+    void autoOptionsChanged();
     void customRulesChanged();
     void cycleChordChanged();
     /// Emitted when the tray or a second instance asks for the window.
@@ -166,6 +172,7 @@ signals:
 private:
     void rebuildLanguageList();
     void applyEngine();
+    [[nodiscard]] EnginePtr createConfiguredEngine(const QString& id) const;
     void persist();
     void onStatus(HookService::Status status);
 
@@ -175,6 +182,7 @@ private:
     QVariantList                     languages_;
     QString                          languageId_;
     QString                          customRulesSummary_;
+    QString                          literalWords_;
     bool                             enabled_ = true;
     bool                             autoStartHook_ = true;
 

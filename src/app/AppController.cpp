@@ -4,13 +4,19 @@
 #include "app/Diagnostics.hpp"
 #include "app/RuleSetLoader.hpp"
 #include "core/RuleEngineRegistry.hpp"
+#include "core/Unicode.hpp"
+#include "core/auto/AutoRuleEngine.hpp"
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
 
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDebug>
 #include <QMetaObject>
 #include <QUrl>
 #include <QVariantMap>
+
+#include <algorithm>
+#include <exception>
 
 namespace st {
 
@@ -61,6 +67,10 @@ void AppController::initialise()
     deOptions_.doubleKeyRevert = boolOpt(de, "doubleKeyRevert", deOptions_.doubleKeyRevert);
     deOptions_.useExceptions   = boolOpt(de, "useExceptions", deOptions_.useExceptions);
 
+    const EngineOptions automatic = settings_.engineOptions(QStringLiteral("auto"));
+    if (const auto it = automatic.find("literalWords"); it != automatic.end())
+        literalWords_ = QString::fromStdString(it->second);
+
     const QString configDir = Settings::configDirectory();
     diagnostics::milestone(QStringLiteral("config directory: ") + configDir);
 
@@ -79,6 +89,9 @@ void AppController::initialise()
         RuleEngineRegistry::instance().clearRuleSets();
         RuleEngineRegistry::instance().registerBuiltins();
         rebuildLanguageList();
+        if (languageId_.isEmpty()
+            || !RuleEngineRegistry::instance().contains(languageId_.toStdString()))
+            setLanguageId(QStringLiteral("auto"));
     }
 
     // The hook thread calls back from outside the GUI thread; bounce onto it.
@@ -116,6 +129,7 @@ void AppController::initialise()
     emit trayBadgeChanged();
     emit vnOptionsChanged();
     emit deOptionsChanged();
+    emit autoOptionsChanged();
 }
 
 void AppController::onStatus(HookService::Status status)
@@ -149,9 +163,18 @@ void AppController::rebuildLanguageList()
 
 void AppController::applyEngine()
 {
-    EnginePtr engine = RuleEngineRegistry::instance().create(languageId_.toStdString());
+    EnginePtr engine = createConfiguredEngine(languageId_);
     if (!engine)
         return;
+
+    hook_->setEngine(std::move(engine));
+}
+
+EnginePtr AppController::createConfiguredEngine(const QString& id) const
+{
+    EnginePtr engine = RuleEngineRegistry::instance().create(id.toStdString());
+    if (!engine)
+        return nullptr;
 
     if (auto* german = dynamic_cast<GermanRuleEngine*>(engine.get())) {
         GermanRuleEngine::Options options;
@@ -170,11 +193,24 @@ void AppController::applyEngine()
         options.spellCheck  = vnOptions_.spellCheck;
         options.autoRestore = vnOptions_.autoRestore;
         vietnamese->setVnOptions(options);
+    } else if (auto* automatic = dynamic_cast<AutoRuleEngine*>(engine.get())) {
+        EngineOptions options;
+        options["method"] = vnOptions_.method.toStdString();
+        options["modernTone"] = vnOptions_.modernTone ? "true" : "false";
+        options["spellCheck"] = vnOptions_.spellCheck ? "true" : "false";
+        options["autoRestore"] = vnOptions_.autoRestore ? "true" : "false";
+        options["umlauts"] = deOptions_.umlauts ? "true" : "false";
+        options["sharpS"] = deOptions_.sharpS ? "true" : "false";
+        options["capitalSharpS"] = deOptions_.capitalSharpS ? "true" : "false";
+        options["doubleKeyRevert"] = deOptions_.doubleKeyRevert ? "true" : "false";
+        options["useExceptions"] = deOptions_.useExceptions ? "true" : "false";
+        options["literalWords"] = literalWords_.toStdString();
+        automatic->applyOptions(options);
+        automatic->setGermanExceptions(germanExceptions_);
     } else {
-        engine->applyOptions(settings_.engineOptions(languageId_));
+        engine->applyOptions(settings_.engineOptions(id));
     }
-
-    hook_->setEngine(std::move(engine));
+    return engine;
 }
 
 void AppController::persist()
@@ -196,6 +232,10 @@ void AppController::persist()
     de["doubleKeyRevert"] = deOptions_.doubleKeyRevert ? "true" : "false";
     de["useExceptions"]   = deOptions_.useExceptions ? "true" : "false";
     settings_.setEngineOptions(QStringLiteral("de"), de);
+
+    EngineOptions automatic;
+    automatic["literalWords"] = literalWords_.toStdString();
+    settings_.setEngineOptions(QStringLiteral("auto"), automatic);
 
     settings_.sync();
 }
@@ -425,9 +465,9 @@ void AppController::reloadCustomRules()
     rebuildLanguageList();
 
     diagnostics::milestone(QStringLiteral("  selecting the engine"));
-    if (!languageId_.isEmpty()
-        && !RuleEngineRegistry::instance().contains(languageId_.toStdString()))
-        setLanguageId(QStringLiteral("de"));
+    if (languageId_.isEmpty()
+        || !RuleEngineRegistry::instance().contains(languageId_.toStdString()))
+        setLanguageId(QStringLiteral("auto"));
     else
         applyEngine();
 
@@ -460,6 +500,17 @@ void AppController::setVnMethod(const QString& method)
     applyEngine();
     persist();
     emit vnOptionsChanged();
+    emit autoOptionsChanged();
+}
+
+void AppController::setLiteralWords(const QString& words)
+{
+    if (literalWords_ == words)
+        return;
+    literalWords_ = words;
+    applyEngine();
+    persist();
+    emit autoOptionsChanged();
 }
 
 #define ST_SIMPLE_SETTER(setter, field, signalName)                                               \
@@ -471,6 +522,7 @@ void AppController::setVnMethod(const QString& method)
         applyEngine();                                                                            \
         persist();                                                                                \
         emit signalName();                                                                        \
+        emit autoOptionsChanged();                                                                \
     }
 
 ST_SIMPLE_SETTER(setVnModernTone, vnOptions_.modernTone, vnOptionsChanged)
@@ -483,5 +535,55 @@ ST_SIMPLE_SETTER(setDeDoubleKeyRevert, deOptions_.doubleKeyRevert, deOptionsChan
 ST_SIMPLE_SETTER(setDeUseExceptions, deOptions_.useExceptions, deOptionsChanged)
 
 #undef ST_SIMPLE_SETTER
+
+QString AppController::previewTyping(const QString& raw)
+{
+    constexpr qsizetype kMaxPreviewLength = 4096;
+    const QString input = raw.left(kMaxPreviewLength);
+    try {
+        EnginePtr engine = createConfiguredEngine(languageId_);
+        if (!engine)
+            return input;
+
+        std::u32string visible;
+        for (uint value : input.toUcs4()) {
+            const char32_t character = static_cast<char32_t>(value);
+            KeyEvent event;
+            switch (character) {
+            case U'\b': event = KeyEvent::of(KeyKind::Backspace); break;
+            case U' ': event = KeyEvent::of(KeyKind::Space); event.character = U' '; break;
+            case U'\n':
+            case U'\r': event = KeyEvent::of(KeyKind::Enter); break;
+            case U'\t': event = KeyEvent::of(KeyKind::Tab); break;
+            default: event = KeyEvent::character_(character); break;
+            }
+
+            const EngineResult result = engine->processKey(event);
+            if (result.handled) {
+                const auto count = std::min<std::size_t>(
+                    visible.size(), static_cast<std::size_t>(std::max(0, result.backspaces)));
+                visible.resize(visible.size() - count);
+                visible += result.text;
+            } else if (event.kind == KeyKind::Backspace) {
+                if (!visible.empty())
+                    visible.pop_back();
+            } else if (event.kind == KeyKind::Enter) {
+                visible.push_back(U'\n');
+            } else if (event.kind == KeyKind::Tab) {
+                visible.push_back(U'\t');
+            } else {
+                visible.push_back(character);
+            }
+        }
+        const std::string output = unicode::toUtf8(visible);
+        return QString::fromUtf8(output.data(), static_cast<qsizetype>(output.size()));
+    } catch (const std::exception& error) {
+        qWarning("typing preview failed: %s", error.what());
+        return input;
+    } catch (...) {
+        qWarning("typing preview failed with an unknown error");
+        return input;
+    }
+}
 
 } // namespace st

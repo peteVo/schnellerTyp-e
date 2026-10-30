@@ -18,7 +18,9 @@ const auto kCycleChordKey = QStringLiteral("app/cycleChord");
 
 } // namespace
 
-Settings::Settings() : settings_(QStringLiteral("schnellerTyp-e"), QStringLiteral("schnellerTyp-e"))
+Settings::Settings()
+    : settings_(QSettings::defaultFormat(), QSettings::UserScope,
+                QStringLiteral("schnellerTyp-e"), QStringLiteral("schnellerTyp-e"))
 {
 }
 
@@ -34,7 +36,7 @@ void Settings::setEnabled(bool enabled)
 
 QString Settings::languageId() const
 {
-    return settings_.value(kLanguageKey, QStringLiteral("de")).toString();
+    return settings_.value(kLanguageKey, QStringLiteral("auto")).toString();
 }
 
 void Settings::setLanguageId(const QString& id)

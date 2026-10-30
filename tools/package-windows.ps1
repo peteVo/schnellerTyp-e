@@ -244,7 +244,9 @@ if ($stillMissing) { Fail "Visual C++ runtime still incomplete: $($stillMissing 
 # --- documents and licences ------------------------------------------------
 
 Write-Step 'Adding documents and licences'
-foreach ($doc in 'README.md', 'BUILD.md', 'NOTICE.md', 'LICENSE') {
+New-Item -ItemType Directory -Path (Join-Path $stageDir 'licenses\wordfreq') -Force | Out-Null
+Copy-Item (Join-Path $SourceDir 'src\core\auto\data\*') (Join-Path $stageDir 'licenses\wordfreq')
+foreach ($doc in 'README.md', 'BUILD.md', 'PLATFORMS.md', 'NOTICE.md', 'LICENSE') {
     $path = Join-Path $SourceDir $doc
     if (Test-Path $path) { Copy-Item $path $stageDir }
 }

@@ -1,0 +1,8 @@
+[Addon]
+Name=schnellerTyp-e
+Category=InputMethod
+Version=@PROJECT_VERSION@
+Library=schnellerTyp-e-fcitx5
+Type=SharedLibrary
+OnDemand=True
+
