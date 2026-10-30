@@ -68,10 +68,13 @@ try {
     }
     $licenses = Join-Path $stageDir 'licenses'
     $wordfreq = Join-Path $licenses 'wordfreq'
+    $germanSpelling = Join-Path $licenses 'german-spelling'
     $uiohookLicenses = Join-Path $licenses 'libuiohook'
-    New-Item -ItemType Directory -Path $wordfreq,$uiohookLicenses -Force | Out-Null
+    New-Item -ItemType Directory -Path $wordfreq,$germanSpelling,$uiohookLicenses -Force | Out-Null
     Copy-Item (Join-Path $SourceDir 'src\core\auto\data\LICENSE-CC-BY-SA-4.0.txt') $wordfreq
     Copy-Item (Join-Path $SourceDir 'src\core\auto\data\NOTICE-wordfreq.md') $wordfreq
+    Copy-Item (Join-Path $SourceDir 'src\core\auto\data\LICENSE-CC0-1.0.txt') $germanSpelling
+    Copy-Item (Join-Path $SourceDir 'src\core\auto\data\NOTICE-german-spelling.md') $germanSpelling
     Copy-Item (Join-Path $SourceDir 'build\libuiohook-src\COPYING.LESSER.md') $uiohookLicenses
     Copy-Item (Join-Path $SourceDir 'build\libuiohook-src\COPYING.md') $uiohookLicenses
     Copy-Item (Join-Path $SourceDir 'build\libuiohook-src\COPYING.LESSER.md') `
@@ -96,7 +99,8 @@ opens settings; right click opens its menu. Ctrl + Shift cycles languages.
 Nothing is installed. Quit from the tray, then delete this folder to remove it.
 
 The offline word frequency data attribution and CC BY-SA 4.0 license are in
-licenses\wordfreq. libuiohook license texts are in licenses\libuiohook.
+licenses\wordfreq. German sharp-S word data attribution and CC0 license are in
+licenses\german-spelling. libuiohook license texts are in licenses\libuiohook.
 "@ | Set-Content (Join-Path $stageDir 'READ-ME-FIRST.txt') -Encoding UTF8
 
     Compress-Archive -Path $stageDir -DestinationPath $zipPath -CompressionLevel Optimal

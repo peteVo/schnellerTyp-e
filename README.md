@@ -94,4 +94,8 @@ Application code is MIT. The filtered word-frequency data is CC BY-SA 4.0,
 derived from wordfreq 3.1.1 by Robyn Speer. Its full attribution and license are
 in src/core/auto/data/; tools/generate-frequency-data.py reproduces the
 checked-in tables. Python/wordfreq is development tooling, not an app dependency.
+German sharp-S candidate data is derived from
+[enz/german-wordlist](https://github.com/enz/german-wordlist) and licensed under
+CC0 1.0; source details and scope are in
+[NOTICE-german-spelling.md](src/core/auto/data/NOTICE-german-spelling.md).
 See [NOTICE.md](NOTICE.md) for all attributions and the relationship to UniKey.

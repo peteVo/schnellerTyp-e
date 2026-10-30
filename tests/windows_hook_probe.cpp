@@ -21,13 +21,14 @@
 #include <cwchar>
 #include <iterator>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace {
 
-constexpr DWORD kChildMaxMs = 45'000;
+constexpr DWORD kChildMaxMs = 120'000;
 constexpr DWORD kReadyMaxMs = 8'000;
 constexpr DWORD kDrainMaxMs = 3'000;
 constexpr wchar_t kWindowClass[] = L"SchnellerTypeHookProbeWindow";
@@ -123,12 +124,19 @@ bool acquireFocus(ScratchWindow& scratch)
     SetForegroundWindow(scratch.window);
     SetFocus(scratch.edit);
     const auto deadline = GetTickCount64() + 30'000;
+    ULONGLONG focusedSince = 0;
     do {
         pumpMessages();
         if (GetForegroundWindow() == scratch.window)
             SetFocus(scratch.edit);
-        if (scratchOwnsFocus(scratch))
-            return true;
+        if (scratchOwnsFocus(scratch)) {
+            if (focusedSince == 0)
+                focusedSince = GetTickCount64();
+            if (GetTickCount64() - focusedSince >= 250)
+                return true;
+        } else {
+            focusedSince = 0;
+        }
         Sleep(25);
     } while (GetTickCount64() < deadline);
     log(true, L"Scratch state: visible=%d, foreground=%d, editFocus=%d\n",
@@ -167,18 +175,18 @@ bool createScratchWindow(ScratchWindow& scratch, HINSTANCE instance)
 }
 
 bool makeChildCommand(std::wstring& command, const std::wstring& readyName,
-                      const std::wstring& stopName)
+                      const std::wstring& stopName, bool vni)
 {
     std::array<wchar_t, 32'768> path{};
     const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (length == 0 || length >= path.size())
         return false;
     command = L"\"" + std::wstring(path.data(), length) + L"\" --hook \"" + readyName
-              + L"\" \"" + stopName + L"\"";
+              + L"\" \"" + stopName + L"\"" + (vni ? L" --vni" : L"");
     return true;
 }
 
-bool launchHookChild(Handles& handles)
+bool launchHookChild(Handles& handles, bool vni)
 {
     const DWORD processId = GetCurrentProcessId();
     const unsigned long long nonce = GetTickCount64();
@@ -195,7 +203,7 @@ bool launchHookChild(Handles& handles)
         return false;
 
     std::wstring command;
-    if (!makeChildCommand(command, readyName.data(), stopName.data()))
+    if (!makeChildCommand(command, readyName.data(), stopName.data(), vni))
         return false;
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -203,7 +211,7 @@ bool launchHookChild(Handles& handles)
                           nullptr, nullptr, &startup, &handles.child) != FALSE;
 }
 
-int runHookChild(const wchar_t* readyName, const wchar_t* stopName)
+int runHookChild(const wchar_t* readyName, const wchar_t* stopName, bool vni)
 {
     HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName);
     HANDLE stop = OpenEventW(SYNCHRONIZE, FALSE, stopName);
@@ -218,7 +226,10 @@ int runHookChild(const wchar_t* readyName, const wchar_t* stopName)
     int exitCode = 0;
     try {
         st::HookService hook;
-        hook.setEngine(std::make_unique<st::AutoRuleEngine>());
+        auto engine = std::make_unique<st::AutoRuleEngine>();
+        if (vni)
+            engine->applyOptions({{"method", "vni"}});
+        hook.setEngine(std::move(engine));
         hook.setEnabled(true);
         std::atomic_bool failed{false};
         hook.setStatusCallback([ready, &failed](st::HookService::Status status) {
@@ -446,10 +457,10 @@ bool runSample(const ScratchWindow& scratch, const Sample& sample, int& checks)
     return true;
 }
 
-int runParentProbe()
+int runParentProbe(bool vni)
 {
     Handles handles;
-    if (!launchHookChild(handles)) {
+    if (!launchHookChild(handles, vni)) {
         log(true, L"SKIP: could not start the hidden hook child process.\n");
         printTotals(0, 1);
         return 2;
@@ -479,17 +490,59 @@ int runParentProbe()
         return 2;
     }
 
-    const std::array<Sample, 7> samples{{
+    const std::array<Sample, 29> telexSamples{{
         {L"Vietnamese", L"hoom nay tooi ddeens New York ", L"hôm nay tôi đến New York ", 20},
-        {L"Vietnamese fast", L"hoom nay tooi ddeens New York ", L"hôm nay tôi đến New York ", 5},
         {L"German", L"Ich moechte schoene Aepfel und Wasser. ",
          L"Ich möchte schöne Äpfel und Wasser. ", 5},
-        {L"English literal words", L"The queen will address the blue guide. ",
-         L"The queen will address the blue guide. ", 5},
-        {L"Visible Backspace", L"tooi\b ", L"tô ", 5},
-        {L"Escape restores keys", L"tooi\x1b ", L"tooi ", 5},
-        {L"Enter preserves order", L"tooi\nNew York ", L"tôi\r\nNew York ", 5},
+        {L"Strasse -> Straße, burst", L"Strasse ", L"Straße ", 0},
+        {L"Strassen -> Straßen", L"Strassen ", L"Straßen ", 1},
+        {L"Gruesse -> Grüße", L"Gruesse ", L"Grüße ", 5},
+        {L"Groesse -> Größe", L"Groesse ", L"Größe ", 1},
+        {L"Fuss -> Fuß, burst", L"Fuss ", L"Fuß ", 0},
+        {L"Grossstadt triple-s", L"Grossstadt ", L"Großstadt ", 5},
+        {L"German ss exception: Wasser", L"Wasser ", L"Wasser ", 1},
+        {L"German ss exception: Masse", L"Masse ", L"Masse ", 5},
+        {L"German ss exception: Kuss, burst", L"Kuss ", L"Kuss ", 0},
+        {L"German ss exception: muessen", L"muessen ", L"müssen ", 1},
+        {L"German ss exception: aussehen", L"aussehen ", L"aussehen ", 5},
+        {L"English sentence", L"The queen will address the blue guide. ",
+         L"The queen will address the blue guide. ", 20},
+        {L"English regression: axis, burst", L"axis ", L"axis ", 0},
+        {L"English regression: beef", L"beef ", L"beef ", 1},
+        {L"English regression: cars", L"cars ", L"cars ", 5},
+        {L"English regression: cheers", L"cheers ", L"cheers ", 1},
+        {L"English regression: hats, burst", L"hats ", L"hats ", 0},
+        {L"English regression: hurts", L"hurts ", L"hurts ", 5},
+        {L"English regression: moon", L"moon ", L"moon ", 1},
+        {L"English regression: teen, burst", L"teen ", L"teen ", 0},
+        {L"Vietnamese, German and English",
+         L"hoom tooi ddeens Berlin; Ich moechte coffee ",
+         L"hôm tôi đến Berlin; Ich möchte coffee ", 1},
+        {L"Email stays literal", L"hoom@tooi.com ", L"hoom@tooi.com ", 1},
+        {L"URL stays literal, burst", L"https://example.com/hoom ",
+         L"https://example.com/hoom ", 0},
+        {L"Windows path stays literal", L"C:\\users\\tooi\\hoom ",
+         L"C:\\users\\tooi\\hoom ", 5},
+        {L"Visible Backspace", L"tooi\b ", L"tô ", 1},
+        {L"Escape restores original keys", L"tooi\x1b ", L"tooi ", 5},
+        {L"Enter preserves order", L"tooi\nNew York ", L"tôi\r\nNew York ", 20},
     }};
+    const std::array<Sample, 10> vniSamples{{
+        {L"VNI: hôm nay tôi đến New York, burst", L"ho6m nay to6i d9e6n1 New York ",
+         L"hôm nay tôi đến New York ", 0},
+        {L"VNI: tiếng Việt", L"tie6ng1 Vie6t5 ", L"tiếng Việt ", 1},
+        {L"VNI: người", L"ngu7o7i2 ", L"người ", 5},
+        {L"VNI: giữa", L"giu7a4 ", L"giữa ", 20},
+        {L"VNI: English stays literal", L"The queen will address the blue guide. ",
+         L"The queen will address the blue guide. ", 1},
+        {L"VNI: German still converts", L"Strasse und Gruesse ", L"Straße und Grüße ", 5},
+        {L"VNI: digits compose Vietnamese", L"tie6ng1 Vie6t5 ", L"tiếng Việt ", 0},
+        {L"VNI: visible Backspace", L"to6i\b ", L"tô ", 1},
+        {L"VNI: Escape restores original keys", L"to6i\x1b ", L"to6i ", 5},
+        {L"VNI: Enter preserves order", L"to6i\nNew York ", L"tôi\r\nNew York ", 20},
+    }};
+    const std::span<const Sample> samples = vni ? std::span<const Sample>(vniSamples)
+                                                : std::span<const Sample>(telexSamples);
 
     int checks = 0;
     int failures = 0;
@@ -506,19 +559,47 @@ int runParentProbe()
         }
         if (!runSample(scratch, samples[i], checks)) {
             ++failures;
-            break;
+            if (!scratchOwnsFocus(scratch))
+                break;
         }
     }
 
+    if (vni) {
+        printTotals(checks, failures);
+        return failures == 0 && checks == static_cast<int>(samples.size()) ? 0 : 1;
+    }
+
+    constexpr std::wstring_view stressRawPhrase =
+        L"hoom tooi ddeens Berlin und moechte coffee; ";
+    constexpr std::wstring_view stressExpectedPhrase =
+        L"hôm tôi đến Berlin und möchte coffee; ";
+    std::wstring stressRaw;
+    std::wstring stressExpected;
+    for (int i = 0; i < 20; ++i) {
+        stressRaw += stressRawPhrase;
+        stressExpected += stressExpectedPhrase;
+    }
+    if (failures == 0 && !resetScratch(scratch)) {
+        log(true, L"SKIP: focus changed while resetting for repeated-line stress.\n");
+        ++failures;
+    }
+    if (failures == 0 && scratchOwnsFocus(scratch)) {
+        const Sample stress{L"20x mixed-language line at 0 ms", stressRaw,
+                            stressExpected, 0};
+        if (!runSample(scratch, stress, checks))
+            ++failures;
+    }
+
     printTotals(checks, failures);
-    return failures == 0 && checks == static_cast<int>(samples.size()) ? 0 : 1;
+    return failures == 0 && checks == static_cast<int>(samples.size()) + 1 ? 0 : 1;
 }
 
 } // namespace
 
 int probeMain(int argc, char* argv[])
 {
-    if (argc == 4 && std::string(argv[1]) == "--hook") {
+    if ((argc == 4 || (argc == 5 && std::string(argv[4]) == "--vni"))
+        && std::string(argv[1]) == "--hook") {
         const auto widenAscii = [](const char* text) {
             std::wstring result;
             for (; *text; ++text)
@@ -527,13 +608,14 @@ int probeMain(int argc, char* argv[])
         };
         const std::wstring ready = widenAscii(argv[2]);
         const std::wstring stop = widenAscii(argv[3]);
-        return runHookChild(ready.c_str(), stop.c_str());
+        return runHookChild(ready.c_str(), stop.c_str(), argc == 5);
     }
-    if (argc != 1) {
-        log(true, L"Usage: windows_hook_probe.exe\n");
+    const bool vni = argc == 2 && std::string(argv[1]) == "--vni";
+    if (argc != 1 && !vni) {
+        log(true, L"Usage: windows_hook_probe.exe [--vni]\n");
         return 2;
     }
-    return runParentProbe();
+    return runParentProbe(vni);
 }
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)

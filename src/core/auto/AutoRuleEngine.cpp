@@ -16,6 +16,7 @@ struct LexiconEntry {
 // The frequency tables have their own CC BY-SA 4.0 attribution. The engine
 // code is MIT; see data/NOTICE-wordfreq.md and tools/generate-frequency-data.py.
 #include "core/auto/FrequencyData.inc"
+#include "core/auto/data/GermanSharpS.inc"
 
 char32_t lowerLatin(char32_t c)
 {
@@ -35,15 +36,48 @@ std::u32string lower(std::u32string_view word)
     return result;
 }
 
+// wordfreq case-folds sharp S to "ss". Keep that normalization in lookup
+// keys only: the candidate shown to the user must retain its German spelling.
+std::u32string frequencyKey(std::u32string_view word)
+{
+    std::u32string result;
+    for (const char32_t c : lower(word)) {
+        if (c == U'ß')
+            result += U"ss";
+        else
+            result.push_back(c);
+    }
+    return result;
+}
+
 template<std::size_t N>
 int frequency(const std::array<LexiconEntry, N>& dictionary, std::u32string_view word)
 {
-    const std::string key = unicode::toUtf8(lower(word));
+    const std::string key = unicode::toUtf8(frequencyKey(word));
     const auto it = std::lower_bound(dictionary.begin(), dictionary.end(), key,
                                    [](const LexiconEntry& entry, std::string_view value) {
                                        return entry.word < value;
                                    });
     return it != dictionary.end() && it->word == key ? it->frequency : 0;
+}
+
+int germanFrequency(std::u32string_view word)
+{
+    if (const int direct = frequency(kGermanWords, word))
+        return direct;
+    // German compounds need not occur in a capped whole-word table. Recognize
+    // two attested parts, including verb stems such as füll(en) + Menge.
+    int compound = 0;
+    for (std::size_t split = 3; split + 3 <= word.size(); ++split) {
+        const auto head = word.substr(0, split);
+        const auto tail = word.substr(split);
+        const int left = std::max(frequency(kGermanWords, head),
+                                  frequency(kGermanWords, std::u32string(head) + U"en"));
+        const int right = frequency(kGermanWords, tail);
+        if (left >= 350 && right >= 350)
+            compound = std::max(compound, std::min(left, right) - 40);
+    }
+    return compound;
 }
 
 bool wordCharacter(char32_t c)
@@ -86,6 +120,11 @@ std::u32string render(LanguageRuleEngine& engine, std::u32string_view raw, bool 
 
 } // namespace
 
+AutoRuleEngine::AutoRuleEngine()
+{
+    applyOptions({});
+}
+
 void AutoRuleEngine::clearWord() noexcept
 {
     raw_.clear();
@@ -112,7 +151,11 @@ void AutoRuleEngine::applyOptions(const EngineOptions& options)
 {
     options_ = options;
     vietnamese_.applyOptions(options);
-    german_.applyOptions(options);
+    auto germanOptions = options;
+    // Escape is Automatic's literal recovery. A third s is part of compounds
+    // such as Grossstadt, not the manual German mode's double-key undo.
+    germanOptions["doubleKeyRevert"] = "false";
+    german_.applyOptions(germanOptions);
     literalWords_.clear();
     if (const auto it = options.find("literalWords"); it != options.end()) {
         const auto words = unicode::fromUtf8(it->second);
@@ -146,7 +189,52 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
 
     // ponytail: unigram frequencies plus one committed word of language context;
     // add a compact contextual model if held-out mixed prose needs more accuracy.
-    Candidate best{raw_, language, std::max({english, german, vietnamese, 280}) + 45};
+    auto de = render(german_, raw_, final);
+    if (raw_.size() > 1 && std::all_of(raw_.begin(), raw_.end(), [](char32_t c) {
+            return lowerLatin(c) != c;
+        })) {
+        // Default German uppercase spelling uses SS. The explicit capitalSharpS
+        // option already renders ẞ, which is preserved here.
+        std::u32string uppercase;
+        for (const char32_t c : de) {
+            if (c == U'ß')
+                uppercase += U"SS";
+            else
+                uppercase.push_back(c);
+        }
+        de = std::move(uppercase);
+    }
+    // Case-folded frequencies cannot tell Borussia from the invalid Borußia.
+    // Accept a sharp-S candidate only when an independent spelling list attests
+    // that exact spelling. Absence favours preserving the user's original keys.
+    if (de.find(U'ß') != std::u32string::npos || de.find(U'ẞ') != std::u32string::npos) {
+        const auto spelling = unicode::toUtf8(lower(de));
+        if (!std::binary_search(kGermanSharpSWords.begin(), kGermanSharpSWords.end(), spelling))
+            de = raw_;
+    }
+    const int deScore = germanFrequency(de);
+    int literalGerman = german;
+    // A folded dictionary entry is evidence for Straße, not evidence that
+    // the ASCII spelling Strasse should win over it. Common English words
+    // (gross) and English-context homographs (fuss) still favour literal input.
+    const bool sharpS = de.find(U'ß') != std::u32string::npos
+                        || de.find(U'ẞ') != std::u32string::npos;
+    // English dictionary evidence protects cars/cans/moon from Telex. At a
+    // fresh start only a strongly German sharp-S spelling (Fuss/Weiss) can
+    // override it; after English prose even those homographs stay literal.
+    if (english > 0
+        && (context_ == Language::English
+            || (context_ == Language::Literal
+                && (english >= 400 || raw_.size() >= 3)
+                && !(sharpS && deScore > english + 100))))
+        return {raw_, Language::English, english};
+    if (sharpS && de != raw_ && frequencyKey(de) == frequencyKey(raw_)
+        && deScore >= 300 && german > vietnamese + 60
+        && (english < 400 || context_ == Language::German)
+        && !(context_ == Language::English && english >= 300))
+        literalGerman = 0;
+
+    Candidate best{raw_, language, std::max({english, literalGerman, vietnamese, 280}) + 45};
     auto consider = [&](std::u32string text, Language candidateLanguage, int score) {
         if (text == raw_)
             return;
@@ -162,8 +250,6 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
     if (viScore >= 300)
         consider(std::move(vi), Language::Vietnamese, viScore);
 
-    auto de = render(german_, raw_, final);
-    const int deScore = frequency(kGermanWords, de);
     if (deScore >= 300)
         consider(std::move(de), Language::German, deScore);
     return best;

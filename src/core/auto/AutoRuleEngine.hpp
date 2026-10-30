@@ -12,6 +12,7 @@ namespace st {
 /// separator commits it. Unknown and ambiguous words favour literal input.
 class AutoRuleEngine final : public LanguageRuleEngine {
 public:
+    AutoRuleEngine();
     [[nodiscard]] std::string id() const override { return "auto"; }
     [[nodiscard]] std::string displayName() const override { return "Automatic"; }
     [[nodiscard]] std::string badge() const override { return "AUTO"; }

@@ -40,6 +40,12 @@ preserved in src/core/auto/data/NOTICE-wordfreq.md; the full CC BY-SA 4.0 licens
 is beside it. These data files remain CC BY-SA 4.0 and do not change the MIT
 license of independently written application code.
 
+Automatic-mode German sharp-S candidate validation uses a filtered word list
+from [enz/german-wordlist](https://github.com/enz/german-wordlist), licensed
+under CC0 1.0. The source commit, hash, scope and limitations are documented in
+src/core/auto/data/NOTICE-german-spelling.md. It is used for presence checks and
+does not change the MIT license of independently written application code.
+
 The optional Linux addon dynamically uses Fcitx 5 (LGPL-2.1-or-later). The
 optional macOS input source uses Apple's InputMethodKit/AppKit frameworks.
 

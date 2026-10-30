@@ -418,8 +418,12 @@ if(SCHNELLERTYPE_BUILD_FCITX5)
             DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/addon)
     install(FILES packaging/linux/fcitx5/schnellerTyp-e.conf
             DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/inputmethod)
-    install(DIRECTORY src/core/auto/data/
+    install(FILES src/core/auto/data/LICENSE-CC-BY-SA-4.0.txt
+                  src/core/auto/data/NOTICE-wordfreq.md
             DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/schnellerTyp-e/wordfreq)
+    install(FILES src/core/auto/data/LICENSE-CC0-1.0.txt
+                  src/core/auto/data/NOTICE-german-spelling.md
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/schnellerTyp-e/german-spelling)
     install(FILES LICENSE NOTICE.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/schnellerTyp-e)
 endif()
 
@@ -460,6 +464,17 @@ if(SCHNELLERTYPE_BUILD_TESTS)
     target_link_libraries(schnellertype_tests PRIVATE schnellertype_core)
     target_compile_options(schnellertype_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
     add_test(NAME engines COMMAND schnellertype_tests)
+    add_executable(schnellertype_auto_corpus_tests tests/auto_corpus_tests.cpp)
+    set_target_properties(schnellertype_auto_corpus_tests PROPERTIES AUTOMOC OFF)
+    target_link_libraries(schnellertype_auto_corpus_tests PRIVATE schnellertype_core)
+    target_compile_options(schnellertype_auto_corpus_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    add_test(NAME automatic-corpus COMMAND schnellertype_auto_corpus_tests)
+    add_executable(schnellertype_auto_english_audit tests/auto_english_audit.cpp)
+    set_target_properties(schnellertype_auto_english_audit PROPERTIES AUTOMOC OFF)
+    target_link_libraries(schnellertype_auto_english_audit PRIVATE schnellertype_core)
+    target_compile_options(schnellertype_auto_english_audit PRIVATE ${SCHNELLERTYPE_WARNINGS}
+        $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+    add_test(NAME automatic-english-audit COMMAND schnellertype_auto_english_audit)
     if(TARGET schnellertype_native)
         add_executable(schnellertype_native_tests tests/test_native.cpp)
         target_link_libraries(schnellertype_native_tests PRIVATE schnellertype_native)

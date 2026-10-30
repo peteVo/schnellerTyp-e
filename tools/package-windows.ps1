@@ -245,7 +245,11 @@ if ($stillMissing) { Fail "Visual C++ runtime still incomplete: $($stillMissing 
 
 Write-Step 'Adding documents and licences'
 New-Item -ItemType Directory -Path (Join-Path $stageDir 'licenses\wordfreq') -Force | Out-Null
-Copy-Item (Join-Path $SourceDir 'src\core\auto\data\*') (Join-Path $stageDir 'licenses\wordfreq')
+Copy-Item (Join-Path $SourceDir 'src\core\auto\data\LICENSE-CC-BY-SA-4.0.txt') (Join-Path $stageDir 'licenses\wordfreq')
+Copy-Item (Join-Path $SourceDir 'src\core\auto\data\NOTICE-wordfreq.md') (Join-Path $stageDir 'licenses\wordfreq')
+New-Item -ItemType Directory -Path (Join-Path $stageDir 'licenses\german-spelling') -Force | Out-Null
+Copy-Item (Join-Path $SourceDir 'src\core\auto\data\LICENSE-CC0-1.0.txt') (Join-Path $stageDir 'licenses\german-spelling')
+Copy-Item (Join-Path $SourceDir 'src\core\auto\data\NOTICE-german-spelling.md') (Join-Path $stageDir 'licenses\german-spelling')
 foreach ($doc in 'README.md', 'BUILD.md', 'PLATFORMS.md', 'NOTICE.md', 'LICENSE') {
     $path = Join-Path $SourceDir $doc
     if (Test-Path $path) { Copy-Item $path $stageDir }
