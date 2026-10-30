@@ -152,19 +152,19 @@ void insertCommit(id<IMKTextInput> client, const std::u32string& text)
         if (result.handled) {
             NSString* preedit = toNSString(result.text);
             [client setMarkedText:preedit
-                    selectedRange:NSMakeRange(preedit.length, 0)
+                    selectionRange:NSMakeRange(preedit.length, 0)
                   replacementRange:NSMakeRange(NSNotFound, 0)];
             return YES;
         }
     } catch (const std::exception& error) {
         NSLog(@"schnellerTyp-e: input engine failed: %s", error.what());
         session_->reset();
-        [client setMarkedText:@"" selectedRange:NSMakeRange(0, 0)
+        [client setMarkedText:@"" selectionRange:NSMakeRange(0, 0)
               replacementRange:NSMakeRange(NSNotFound, 0)];
     } catch (...) {
         NSLog(@"schnellerTyp-e: input engine failed");
         session_->reset();
-        [client setMarkedText:@"" selectedRange:NSMakeRange(0, 0)
+        [client setMarkedText:@"" selectionRange:NSMakeRange(0, 0)
               replacementRange:NSMakeRange(NSNotFound, 0)];
     }
     return NO;

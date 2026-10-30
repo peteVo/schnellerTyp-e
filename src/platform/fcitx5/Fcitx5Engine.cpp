@@ -84,18 +84,26 @@ Engine::Engine(fcitx::Instance *instance) : instance_(instance)
 {
     instance_->inputContextManager().registerProperty("schnellerTypEComposition",
                                                       &stateFactory_);
-    focusOutHandler_ = instance_->watchEvent<fcitx::EventType::InputContextFocusOut>(
+    focusOutHandler_ = instance_->watchEvent(
+        fcitx::EventType::InputContextFocusOut,
         fcitx::EventWatcherPhase::PreInputMethod,
-        [this](fcitx::FocusOutEvent &event) { finish(event.inputContext()); });
-    capabilityHandler_ = instance_->watchEvent<fcitx::EventType::InputContextCapabilityAboutToChange>(
+        [this](fcitx::Event &baseEvent) {
+            auto &event = static_cast<fcitx::FocusOutEvent &>(baseEvent);
+            finish(event.inputContext());
+        });
+    capabilityHandler_ = instance_->watchEvent(
+        fcitx::EventType::InputContextCapabilityAboutToChange,
         fcitx::EventWatcherPhase::PreInputMethod,
-        [this](fcitx::CapabilityAboutToChangeEvent &event) {
+        [this](fcitx::Event &baseEvent) {
+            auto &event = static_cast<fcitx::CapabilityAboutToChangeEvent &>(baseEvent);
             if (sensitive(event.newFlags()))
                 discard(event.inputContext());
         });
-    capabilityChangedHandler_ = instance_->watchEvent<fcitx::EventType::InputContextCapabilityChanged>(
+    capabilityChangedHandler_ = instance_->watchEvent(
+        fcitx::EventType::InputContextCapabilityChanged,
         fcitx::EventWatcherPhase::PreInputMethod,
-        [this](fcitx::CapabilityChangedEvent &event) {
+        [this](fcitx::Event &baseEvent) {
+            auto &event = static_cast<fcitx::CapabilityChangedEvent &>(baseEvent);
             if (sensitive(event.newFlags()))
                 discard(event.inputContext());
         });

@@ -157,7 +157,8 @@ add_library(schnellertype_core STATIC
 )
 target_include_directories(schnellertype_core PUBLIC src)
 set_target_properties(schnellertype_core PROPERTIES POSITION_INDEPENDENT_CODE ON AUTOMOC OFF)
-target_compile_options(schnellertype_core PRIVATE ${SCHNELLERTYPE_WARNINGS})
+target_compile_options(schnellertype_core PRIVATE ${SCHNELLERTYPE_WARNINGS}
+    $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 
 # ---------------------------------------------------------------------------
 # Hook layer — libuiohook plus one native injector per platform
