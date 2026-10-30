@@ -43,7 +43,9 @@ void VietnameseRuleEngine::reset() noexcept
     markKeyUsed_ = 0;
     toneBlockAt_ = kNoBlock;
     markBlockAt_ = kNoBlock;
+    shortcutWAt_ = kNoBlock;
     rawDirty_    = false;
+    literalUndo_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,15 +123,18 @@ std::vector<std::size_t> VietnameseRuleEngine::markTargets(Mark mark) const
     const std::size_t begin = p.nucleusBegin;  // "qu"/"gi" u/i may still take a horn
     const std::size_t end   = p.nucleusEnd;
 
-    // "uo" always takes the horn as a pair: ươ, never ưo or uơ.
+    // Delayed horn marks apply to clusters: uo -> ươ, ua -> ưa, uu -> ưu.
     if (mark == Mark::Horn) {
         for (std::size_t i = begin; i + 1 < end; ++i) {
-            if (letters_[i].base == U'u' && letters_[i + 1].base == U'o') {
+            if (letters_[i].base == U'u'
+                && (letters_[i + 1].base == U'o' || letters_[i + 1].base == U'a'
+                    || letters_[i + 1].base == U'u')) {
                 // ...unless "u" belongs to the "qu" onset (quở, not qưở).
                 if (p.toneScanBegin > i)
                     break;
                 targets.push_back(i);
-                targets.push_back(i + 1);
+                if (letters_[i + 1].base == U'o')
+                    targets.push_back(i + 1);
                 return targets;
             }
         }
@@ -138,7 +143,8 @@ std::vector<std::size_t> VietnameseRuleEngine::markTargets(Mark mark) const
     // Otherwise the last vowel in the nucleus that can carry the mark wins.
     for (std::size_t i = end; i-- > begin;) {
         Mark effective = mark;
-        if (mark == Mark::Horn && letters_[i].base == U'a')
+        if (mark == Mark::Horn && letters_[i].base == U'a'
+            && opts_.method == VnInputMethod::Telex)
             effective = Mark::Breve;  // Telex 'w' means breve on 'a'
         if (vn::markAllowed(letters_[i].base, effective)) {
             targets.push_back(i);
@@ -171,6 +177,8 @@ bool VietnameseRuleEngine::applyTone(Tone tone, char32_t key)
         toneKeyUsed_ = 0;
         appendLiteral(key);
         toneBlockAt_ = letters_.size();
+        rawDirty_ = true;
+        literalUndo_ = true;
         return true;
     }
 
@@ -201,6 +209,7 @@ bool VietnameseRuleEngine::applyMark(Mark mark, char32_t key)
         l.base  = U'u';
         l.mark  = Mark::Horn;
         l.upper = unicode::isAsciiUpper(key);
+        shortcutWAt_ = letters_.size();
         letters_.push_back(l);
         markKeyUsed_ = U'w';
         toneBlockAt_ = kNoBlock;
@@ -212,7 +221,8 @@ bool VietnameseRuleEngine::applyMark(Mark mark, char32_t key)
 
     // Resolve 'w' to breve where the target is an 'a'.
     auto effectiveMark = [&](std::size_t idx) {
-        if (mark == Mark::Horn && letters_[idx].base == U'a')
+        if (mark == Mark::Horn && letters_[idx].base == U'a'
+            && opts_.method == VnInputMethod::Telex)
             return Mark::Breve;
         return mark;
     };
@@ -222,12 +232,21 @@ bool VietnameseRuleEngine::applyMark(Mark mark, char32_t key)
     });
 
     if (alreadySet) {
-        // Second press: strip the mark and type the key literally ("uww" -> "uw").
-        for (std::size_t i : targets)
-            letters_[i].mark = Mark::None;
+        // A synthetic ư came from one w, not from u+w: ww restores w;
+        // explicitly typed u+w still uses the ordinary uww -> uw undo.
+        if (targets.size() == 1 && targets.front() == shortcutWAt_) {
+            letters_[shortcutWAt_].base = U'w';
+            letters_[shortcutWAt_].mark = Mark::None;
+            shortcutWAt_ = kNoBlock;
+        } else {
+            for (std::size_t i : targets)
+                letters_[i].mark = Mark::None;
+            appendLiteral(key);
+        }
         markKeyUsed_ = 0;
-        appendLiteral(key);
         markBlockAt_ = letters_.size();
+        rawDirty_ = true;  // Space must not reinstate the undone modifier key.
+        literalUndo_ = true;
         return true;
     }
 
@@ -312,6 +331,8 @@ EngineResult VietnameseRuleEngine::handleBackspace()
     const std::u32string before = emitted_;
 
     letters_.pop_back();
+    if (shortcutWAt_ >= letters_.size())
+        shortcutWAt_ = kNoBlock;
     if (letters_.empty())
         tone_ = Tone::None;
     if (!raw_.empty())
@@ -409,6 +430,8 @@ EngineResult VietnameseRuleEngine::processKey(const KeyEvent& event)
             last.mark = Mark::None;  // undo
             appendLiteral(c);
             markBlockAt_ = letters_.size();
+            rawDirty_ = true;
+            literalUndo_ = true;
             consumed     = true;
         }
     }

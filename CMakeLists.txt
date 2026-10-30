@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(schnellerTyp-e
-    VERSION 0.2.0
+    VERSION 0.2.1
     DESCRIPTION "Cross-platform input method editor and text transformation tool"
     LANGUAGES CXX
 )
@@ -469,6 +469,11 @@ if(SCHNELLERTYPE_BUILD_TESTS)
     target_link_libraries(schnellertype_auto_corpus_tests PRIVATE schnellertype_core)
     target_compile_options(schnellertype_auto_corpus_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
     add_test(NAME automatic-corpus COMMAND schnellertype_auto_corpus_tests)
+    add_executable(schnellertype_vietnamese_regression_tests tests/vietnamese_regression_tests.cpp)
+    set_target_properties(schnellertype_vietnamese_regression_tests PROPERTIES AUTOMOC OFF)
+    target_link_libraries(schnellertype_vietnamese_regression_tests PRIVATE schnellertype_core)
+    target_compile_options(schnellertype_vietnamese_regression_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    add_test(NAME vietnamese-regressions COMMAND schnellertype_vietnamese_regression_tests)
     add_executable(schnellertype_auto_english_audit tests/auto_english_audit.cpp)
     set_target_properties(schnellertype_auto_english_audit PROPERTIES AUTOMOC OFF)
     target_link_libraries(schnellertype_auto_english_audit PRIVATE schnellertype_core)

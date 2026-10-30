@@ -64,6 +64,8 @@ public:
 
     /// Current composed word — exposed for tests and for the diagnostics pane.
     [[nodiscard]] const std::u32string& composed() const noexcept { return emitted_; }
+    /// Explicit repeated modifiers requested literal text for this word.
+    [[nodiscard]] bool hasLiteralUndo() const noexcept { return literalUndo_; }
 
 private:
     static constexpr std::size_t kNoBlock = static_cast<std::size_t>(-1);
@@ -99,7 +101,9 @@ private:
     char32_t    markKeyUsed_ = 0;        ///< key that set the last mark
     std::size_t toneBlockAt_ = kNoBlock; ///< tone keys are literal at this length
     std::size_t markBlockAt_ = kNoBlock; ///< mark keys are literal at this length
-    bool        rawDirty_    = false;    ///< a Backspace made raw_ unreliable
+    std::size_t shortcutWAt_ = kNoBlock; ///< ư inserted by the standalone w shortcut
+    bool        rawDirty_    = false;    ///< editing/explicit undo superseded raw keys
+    bool        literalUndo_ = false;    ///< explicit repeated modifier made literal text
 };
 
 } // namespace st

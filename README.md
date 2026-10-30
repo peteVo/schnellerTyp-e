@@ -15,6 +15,10 @@ For example, with Telex:
     Keys:   tooi ddeens Berlin und moechte coffee
     Result: tôi đến Berlin und möchte coffee
 
+In Vietnamese Telex mode, `w` makes `ư`, `ww` types a literal `w`, and `uww`
+types `uw`. Automatic also resolves delayed Telex input `nuawx` and `nuwax`
+to `nữa`; literal undo remains literal after Space.
+
 Automatic compares literal input with Vietnamese and German candidates using
 80,403 offline word-frequency entries and a small amount of language context.
 Known English words, unknown names and ambiguous words favour literal input.

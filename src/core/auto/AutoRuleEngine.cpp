@@ -245,7 +245,18 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
             best = {std::move(text), candidateLanguage, score};
     };
 
-    auto vi = render(vietnamese_, raw_, final);
+    auto vi = render(vietnamese_, raw_, false);
+    const bool literalUndo = vietnamese_.hasLiteralUndo();
+    if (final)
+        vi = render(vietnamese_, raw_, true);
+    // Repeated modifiers explicitly request literal keys (uww -> uw). That
+    // result need not be a Vietnamese dictionary word. Known English words
+    // retain their protection above; personal literals were checked first.
+    // The two-key standalone-w undo is literal even though "ww" also occurs
+    // as an abbreviation in the tables; it must not establish Vietnamese context.
+    if (literalUndo && (raw_.size() == 2 || (english == 0 && german == 0))
+        && !(de != raw_ && deScore >= 300))
+        return {std::move(vi), Language::Literal, 0};
     const int viScore = frequency(kVietnameseWords, vi);
     if (viScore >= 300)
         consider(std::move(vi), Language::Vietnamese, viScore);

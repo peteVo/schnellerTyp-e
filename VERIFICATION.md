@@ -5,6 +5,13 @@
 - Full Windows x64 Release build: passed using Qt 6.11.2, MinGW 13.1.0,
   CMake/Ninja, and warnings treated as errors.
 - Core engine/composition suite: 133 checks passed.
+- The v0.2.1 patch adds 116 unique Vietnamese regression cases: 56 manual
+  Telex, 46 Automatic and 14 VNI cases; all five CTest tests passed. Coverage
+  includes standalone `ww` undo versus `uww`, delayed `nuawx`/`nuwax` → `nữa`,
+  literal undo surviving Space, and Automatic preserving unknown raw literal
+  undo while still recognizing known English and German words. A literal `w`
+  does not establish Vietnamese context: `ww cars hats moon ` stays
+  `w cars hats moon `.
 - Expanded Automatic corpus: 181 typing/editing cases and 5 option cases passed.
   Includes Strasse/Strassen, Grüße, Fuß, Größe, German compounds, SS/ẞ casing,
   literal ss exceptions, English false positives, Telex/VNI, mixed sentences,
@@ -13,17 +20,18 @@
   all 7,080 high-frequency entries also preserved in isolation. Per-key
   backspace bounds, committed-prefix preservation and reset determinism passed.
   The remaining 22,920 lower-frequency entries were also observed in isolation:
-  15 changed, including ambiguous German forms (fuss, sass, weiss) and short
-  typing sequences (oo, ee, ue). Those observations are not counted as correct
-  English detections or hidden as passing accuracy tests.
+  16 showed changed isolated output, including ambiguous German forms (fuss,
+  sass, weiss) and the explicit `ww` → `w` Telex shortcut. The audit found zero
+  unintended English regressions; these observations are not counted as correct
+  English detections.
 - Native preference loader: 6 checks passed with an isolated temporary INI
   profile. The test refuses to run outside that profile.
-- Real Windows hook/injection probe: 30 checks passed in its private Win32 edit
+- v0.2.0 baseline real Windows hook/injection probe: 30 checks passed in its private Win32 edit
   control and a separate hook process. Samples cover German sharp S/umlauts and
   literal ss exceptions, Vietnamese, English regressions, three-language input,
   email/URL/path protection, Backspace, Escape and Enter ordering. Delays range
   from 0 to 20ms per key; the final check types 20 mixed-language lines at 0ms.
-- Separate VNI real-input run: 10 checks passed, including tiếng Việt, người,
+- v0.2.0 baseline separate VNI real-input run: 10 checks passed, including tiếng Việt, người,
   giữa, the New York sentence, English/German in VNI, digit composition,
   Backspace, Escape and Enter. One earlier run lost focus before typing and
   was recorded as a skip; the test now waits for 250ms of stable focus.
@@ -37,8 +45,16 @@
 
 The scratch probe aborts if it does not own foreground/focus. Earlier skipped
 runs and failed runs were used to find and fix recapture/reordering; a skip is
-not counted as a pass. Expanded successful reports: 30 Telex and 10 VNI checks,
-0 failures.
+not counted as a pass. Previously verified v0.2.0 reports: 30 Telex and 10 VNI
+checks, 0 failures. The v0.2.1 real-input run passed all 67 checks: 44 Automatic
+Telex checks including `ww`, `nuawx` and the 20-line stress case; 13 Automatic
+VNI checks; and 10 manual Vietnamese checks. Final rerun reports: 0 failures.
+
+Early patch runs exposed interference from an enabled older copy and a test
+reset mistake: Escape restores raw keys instead of clearing the current word.
+The final scratch helper ends each word with navigation before clearing its
+editor. The older copy was paused during isolated checks, then its enabled
+setting was restored. Failed and skipped runs are not counted as passes.
 
 The installed MSVC toolchain has a local PDB manager mismatch, so the delivered
 portable binary uses the matching Qt/MinGW kit. MSVC-specific packaging remains
@@ -56,10 +72,10 @@ behavior is **unverified**:
 - No macOS SDK/runtime was available, so InputMethodKit was not compiled or run.
 - Hosted portability baseline: core builds/tests passed on Windows/MSVC,
   Ubuntu and macOS, and native Fcitx 5 (Ubuntu 24.04) and InputMethodKit (macOS)
-  builds/tests passed in [run 41115058356](https://github.com/peteVo/schnellerTyp-e/actions/runs/41115058356)
-  at commit `18f122e`. This resolved actual compiler/API failures in the first
-  hosted run. The subsequent Automatic expansion is covered by the local
-  checks above; consult the release/Actions for its final hosted run.
+  builds/tests passed on v0.2.0 release commit
+  `83b1f3fe0d40acb0eb37b30b378d83baee7f0fd7` in [run 41117319424](https://github.com/peteVo/schnellerTyp-e/actions/runs/41117319424).
+  See the v0.2.1 release notes for the patch's hosted run. Hosted builds/tests
+  do not establish desktop runtime compatibility.
 
 ## Limits
 

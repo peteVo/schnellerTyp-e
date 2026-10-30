@@ -11,6 +11,7 @@
 #include <shellapi.h>
 
 #include "core/auto/AutoRuleEngine.hpp"
+#include "core/vietnamese/VietnameseRuleEngine.hpp"
 #include "hook/HookService.hpp"
 
 #include <algorithm>
@@ -175,18 +176,18 @@ bool createScratchWindow(ScratchWindow& scratch, HINSTANCE instance)
 }
 
 bool makeChildCommand(std::wstring& command, const std::wstring& readyName,
-                      const std::wstring& stopName, bool vni)
+                      const std::wstring& stopName, bool vni, bool vi)
 {
     std::array<wchar_t, 32'768> path{};
     const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (length == 0 || length >= path.size())
         return false;
     command = L"\"" + std::wstring(path.data(), length) + L"\" --hook \"" + readyName
-              + L"\" \"" + stopName + L"\"" + (vni ? L" --vni" : L"");
+              + L"\" \"" + stopName + L"\"" + (vni ? L" --vni" : vi ? L" --vi" : L"");
     return true;
 }
 
-bool launchHookChild(Handles& handles, bool vni)
+bool launchHookChild(Handles& handles, bool vni, bool vi)
 {
     const DWORD processId = GetCurrentProcessId();
     const unsigned long long nonce = GetTickCount64();
@@ -203,7 +204,7 @@ bool launchHookChild(Handles& handles, bool vni)
         return false;
 
     std::wstring command;
-    if (!makeChildCommand(command, readyName.data(), stopName.data(), vni))
+    if (!makeChildCommand(command, readyName.data(), stopName.data(), vni, vi))
         return false;
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -211,7 +212,7 @@ bool launchHookChild(Handles& handles, bool vni)
                           nullptr, nullptr, &startup, &handles.child) != FALSE;
 }
 
-int runHookChild(const wchar_t* readyName, const wchar_t* stopName, bool vni)
+int runHookChild(const wchar_t* readyName, const wchar_t* stopName, bool vni, bool vi)
 {
     HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName);
     HANDLE stop = OpenEventW(SYNCHRONIZE, FALSE, stopName);
@@ -226,9 +227,15 @@ int runHookChild(const wchar_t* readyName, const wchar_t* stopName, bool vni)
     int exitCode = 0;
     try {
         st::HookService hook;
-        auto engine = std::make_unique<st::AutoRuleEngine>();
-        if (vni)
-            engine->applyOptions({{"method", "vni"}});
+        std::unique_ptr<st::LanguageRuleEngine> engine;
+        if (vi) {
+            engine = std::make_unique<st::VietnameseRuleEngine>();
+        } else {
+            auto automatic = std::make_unique<st::AutoRuleEngine>();
+            if (vni)
+                automatic->applyOptions({{"method", "vni"}});
+            engine = std::move(automatic);
+        }
         hook.setEngine(std::move(engine));
         hook.setEnabled(true);
         std::atomic_bool failed{false};
@@ -405,7 +412,9 @@ void printTotals(int checks, int failures)
 
 bool resetScratch(const ScratchWindow& scratch)
 {
-    if (!sendVirtualKey(scratch, VK_ESCAPE))
+    // Navigation ends the current word. Escape may instead restore its raw
+    // keys and leave a literal word active, leaking state into the next case.
+    if (!sendVirtualKey(scratch, VK_END))
         return false;
     Sleep(10);
     if (!scratchOwnsFocus(scratch))
@@ -457,10 +466,10 @@ bool runSample(const ScratchWindow& scratch, const Sample& sample, int& checks)
     return true;
 }
 
-int runParentProbe(bool vni)
+int runParentProbe(bool vni, bool vi)
 {
     Handles handles;
-    if (!launchHookChild(handles, vni)) {
+    if (!launchHookChild(handles, vni, vi)) {
         log(true, L"SKIP: could not start the hidden hook child process.\n");
         printTotals(0, 1);
         return 2;
@@ -490,7 +499,7 @@ int runParentProbe(bool vni)
         return 2;
     }
 
-    const std::array<Sample, 29> telexSamples{{
+    const std::array<Sample, 43> telexSamples{{
         {L"Vietnamese", L"hoom nay tooi ddeens New York ", L"hôm nay tôi đến New York ", 20},
         {L"German", L"Ich moechte schoene Aepfel und Wasser. ",
          L"Ich möchte schöne Äpfel und Wasser. ", 5},
@@ -526,8 +535,22 @@ int runParentProbe(bool vni)
         {L"Visible Backspace", L"tooi\b ", L"tô ", 1},
         {L"Escape restores original keys", L"tooi\x1b ", L"tooi ", 5},
         {L"Enter preserves order", L"tooi\nNew York ", L"tôi\r\nNew York ", 20},
+        {L"Vietnamese: ww -> w", L"ww ", L"w ", 0},
+        {L"Vietnamese: ww commits as w", L"ww ", L"w ", 5},
+        {L"Literal w keeps English words intact", L"ww cars hats moon ", L"w cars hats moon ", 1},
+        {L"Vietnamese: nữa live", L"nuawx", L"nữa", 0},
+        {L"Vietnamese: nữa at separator", L"nuawx ", L"nữa ", 5},
+        {L"Vietnamese: doubled modifier undo tww", L"tww ", L"tw ", 1},
+        {L"Vietnamese: doubled modifier undo uww", L"uww ", L"uw ", 1},
+        {L"Vietnamese: delayed mưa", L"muaw ", L"mưa ", 20},
+        {L"Vietnamese: delayed dưa", L"duaw ", L"dưa ", 20},
+        {L"Vietnamese: cứu", L"cuuws ", L"cứu ", 1},
+        {L"Vietnamese: hữu", L"huuwx ", L"hữu ", 1},
+        {L"English context then nữa", L"New York nuawx ", L"New York nữa ", 5},
+        {L"Vietnamese: Backspace from nữa", L"nuawx\b ", L"nữ ", 1},
+        {L"Vietnamese: Escape restores raw nuawx", L"nuawx\x1b ", L"nuawx ", 5},
     }};
-    const std::array<Sample, 10> vniSamples{{
+    const std::array<Sample, 13> vniSamples{{
         {L"VNI: hôm nay tôi đến New York, burst", L"ho6m nay to6i d9e6n1 New York ",
          L"hôm nay tôi đến New York ", 0},
         {L"VNI: tiếng Việt", L"tie6ng1 Vie6t5 ", L"tiếng Việt ", 1},
@@ -540,9 +563,27 @@ int runParentProbe(bool vni)
         {L"VNI: visible Backspace", L"to6i\b ", L"tô ", 1},
         {L"VNI: Escape restores original keys", L"to6i\x1b ", L"to6i ", 5},
         {L"VNI: Enter preserves order", L"to6i\nNew York ", L"tôi\r\nNew York ", 20},
+        {L"VNI: nữa", L"nua74 ", L"nữa ", 1},
+        {L"VNI: cứu", L"cuu71 ", L"cứu ", 0},
+        {L"VNI: quăng", L"qua8ng ", L"quăng ", 5},
     }};
-    const std::span<const Sample> samples = vni ? std::span<const Sample>(vniSamples)
-                                                : std::span<const Sample>(telexSamples);
+    const std::array<Sample, 10> viSamples{{
+        {L"Manual Telex: ww -> w live", L"ww", L"w", 0},
+        {L"Manual Telex: ww commits as w", L"ww ", L"w ", 5},
+        {L"Manual Telex: uww -> uw", L"uww ", L"uw ", 1},
+        {L"Manual Telex: tww -> tw", L"tww ", L"tw ", 1},
+        {L"Manual Telex: nữa live", L"nuawx", L"nữa", 0},
+        {L"Manual Telex: nữa at separator", L"nuawx ", L"nữa ", 5},
+        {L"Manual Telex: uppercase NỮA", L"NUAWX ", L"NỮA ", 1},
+        {L"Manual Telex: mưa dưa cứu hữu", L"muaw duaw cuuws huuwx ",
+         L"mưa dưa cứu hữu ", 20},
+        {L"Manual Telex: Backspace from nữa", L"nuawx\b ", L"nữ ", 1},
+        {L"Manual Telex: Enter preserves order", L"nuawx\nNew York ",
+         L"nữa\r\nNew York ", 5},
+    }};
+    const std::span<const Sample> samples = vi ? std::span<const Sample>(viSamples)
+                                         : vni ? std::span<const Sample>(vniSamples)
+                                               : std::span<const Sample>(telexSamples);
 
     int checks = 0;
     int failures = 0;
@@ -564,7 +605,7 @@ int runParentProbe(bool vni)
         }
     }
 
-    if (vni) {
+    if (vni || vi) {
         printTotals(checks, failures);
         return failures == 0 && checks == static_cast<int>(samples.size()) ? 0 : 1;
     }
@@ -598,7 +639,8 @@ int runParentProbe(bool vni)
 
 int probeMain(int argc, char* argv[])
 {
-    if ((argc == 4 || (argc == 5 && std::string(argv[4]) == "--vni"))
+    if ((argc == 4 || (argc == 5 && (std::string(argv[4]) == "--vni"
+                                     || std::string(argv[4]) == "--vi")))
         && std::string(argv[1]) == "--hook") {
         const auto widenAscii = [](const char* text) {
             std::wstring result;
@@ -608,14 +650,17 @@ int probeMain(int argc, char* argv[])
         };
         const std::wstring ready = widenAscii(argv[2]);
         const std::wstring stop = widenAscii(argv[3]);
-        return runHookChild(ready.c_str(), stop.c_str(), argc == 5);
+        const bool vni = argc == 5 && std::string(argv[4]) == "--vni";
+        return runHookChild(ready.c_str(), stop.c_str(), vni,
+                            argc == 5 && std::string(argv[4]) == "--vi");
     }
     const bool vni = argc == 2 && std::string(argv[1]) == "--vni";
-    if (argc != 1 && !vni) {
-        log(true, L"Usage: windows_hook_probe.exe [--vni]\n");
+    const bool vi = argc == 2 && std::string(argv[1]) == "--vi";
+    if (argc != 1 && !vni && !vi) {
+        log(true, L"Usage: windows_hook_probe.exe [--vni | --vi]\n");
         return 2;
     }
-    return runParentProbe(vni);
+    return runParentProbe(vni, vi);
 }
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
