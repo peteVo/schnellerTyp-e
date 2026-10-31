@@ -38,11 +38,13 @@ keystrokes; leave SCHNELLERTYPE_DEBUG unset for normal use.
 
 ## Desktop interface
 
-**Typing** contains the mode selector and a live practice field using the real
-configured engine. **Preferences** contains Telex/VNI, German rules, personal
+The compact desktop window uses a terminal-inspired monochrome style with a
+status and enable row, three equal-width tabs, and a quiet footer. **Typing**
+puts mode selection, raw keystrokes and a live preview from the real configured
+engine together. **Preferences** contains Telex/VNI, German rules, personal
 literal words and shortcuts. **Setup** contains availability, permissions and
-custom-rule recovery. The interface follows the system light/dark appearance
-and supports keyboard navigation.
+custom-rule recovery. Colors follow the system light/dark appearance, and the
+controls support keyboard navigation.
 
 The app stays in the tray when its settings window closes. Left-click the tray
 to pause/resume, double-click for settings, and right-click for its menu.

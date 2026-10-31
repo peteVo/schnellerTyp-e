@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(schnellerTyp-e
-    VERSION 0.2.1
+    VERSION 0.3.0
     DESCRIPTION "Cross-platform input method editor and text transformation tool"
     LANGUAGES CXX
 )

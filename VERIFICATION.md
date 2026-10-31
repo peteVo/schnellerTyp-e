@@ -90,3 +90,21 @@ frequencies; the list is incomplete and is not a universal spellchecker.
 Ambiguous words can still require context, Escape before Space or a personal
 literal entry. Native adapters currently support saved built-in modes; custom JSON mode
 selection falls back to Automatic there.
+
+## 0.3.0 desktop interface
+
+- Final Qt/MinGW Windows build completed successfully; all five CTest suites
+  passed.
+- Reviewed Typing, Preferences and Setup at the default 820 × 740 px and minimum
+  640 × 560 px window sizes. Tab navigation reveals the editor and actions.
+- The live preview transformed `Strasse nuawx ww New York` to
+  `Straße nữa w New York` using the configured typing engine.
+- Runtime review produced no warnings. Dark appearance received the visual
+  review. Light-mode text contrast was checked against the source palette and
+  measured 5.19:1–14.83:1 for the checked text/surface pairs. The selected dropdown
+  item's source colors measure 14.01:1 in dark mode and 13.76:1 in light mode.
+  The compact language-menu review confirmed the selected item remains legible.
+- The existing 67 real-input engine checks are inherited verification and were
+  not rerun for this interface update. The typing engine was unchanged.
+- This desktop review covers Windows only; Linux and macOS desktop runtime remain
+  unverified as described above.
