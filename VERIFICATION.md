@@ -1,6 +1,38 @@
-# Verification — 30 October 2026
+# Verification — 31 October 2026
 
-## Windows
+## 0.3.1 Vietnamese priority
+
+- Reproduced `heens` remaining literal before the fix, including after English
+  text and in uppercase. Recognized complete Vietnamese syllables now take
+  priority over English without a frequency cutoff. Established German prose
+  retains its contextual rules. Escape and personal literal words override
+  automatic composition.
+- Full Windows Qt/MinGW build passed with warnings treated as errors. All six
+  CTest suites passed, including the new Vietnamese priority suite.
+- Generated 32,504 round-trip checks from 4,063 accented, canonical Vietnamese
+  lexicon syllables: Telex and VNI, live and after Space, fresh and after
+  `Hello `. All passed. The generator filters foreign/unaccented entries and
+  explicitly excludes the source typo `đuợc`; this is coverage, not a general
+  language-detection accuracy measurement. Twenty-one focused priority cases
+  also passed.
+- Audited all 30,000 English entries. Vietnamese priority intentionally changed
+  125 high-frequency and 283 rare standalone entries, and 403 entries after
+  English context. All 30,000 passed Escape recovery and personal-literal
+  protection, with no invalid edits, committed-prefix changes or reset errors.
+- Real Windows keyboard-hook checks passed: 51 Automatic Telex checks, including
+  the 20-line zero-delay stress test; 16 Automatic VNI checks; and 15 manual
+  Vietnamese checks. These cover `hến`, `thuở`, `huơ`/`hươu`, repeated modifiers,
+  Escape, Backspace, Enter, paths and mixed-language input. Failed or skipped
+  preliminary runs are excluded from these totals; final isolated runs had
+  zero failures.
+- The shared Vietnamese engine now handles open `uơ` and its transition to `ươ`
+  when a following letter arrives. Focused manual Telex/VNI cases cover early
+  and delayed horn marks, undo and word boundaries.
+- Linux and macOS desktop runtime were not exercised for this patch. Identical
+  keys remain ambiguous; Vietnamese priority deliberately changes some English
+  words. The lexicon and syllable validator are not exhaustive.
+
+## Windows — v0.2.1 baseline
 
 - Full Windows x64 Release build: passed using Qt 6.11.2, MinGW 13.1.0,
   CMake/Ninja, and warnings treated as errors.

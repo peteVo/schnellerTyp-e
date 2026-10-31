@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <vector>
 
 namespace st {
 namespace {
@@ -85,6 +86,21 @@ bool wordCharacter(char32_t c)
     return unicode::isAsciiAlpha(c) || vn::decompose(c).has_value()
            || c == U'ä' || c == U'Ä' || c == U'ö' || c == U'Ö'
            || c == U'ü' || c == U'Ü' || c == U'ß' || c == U'ẞ';
+}
+
+bool validVietnamese(std::u32string_view word)
+{
+    std::vector<vn::Letter> letters;
+    vn::Tone tone = vn::Tone::None;
+    for (const char32_t c : word) {
+        const auto letter = vn::decompose(c);
+        if (!letter)
+            return false;
+        letters.push_back(letter->letter);
+        if (letter->tone != vn::Tone::None)
+            tone = letter->tone;
+    }
+    return vn::isValidSyllable(letters, tone, false);
 }
 
 void apply(std::u32string& screen, const KeyEvent& key, const EngineResult& result)
@@ -187,6 +203,22 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
     else if (vietnamese > english + 60 && vietnamese > german)
         language = Language::Vietnamese;
 
+    auto vi = render(vietnamese_, raw_, false);
+    const bool literalUndo = vietnamese_.hasLiteralUndo();
+    if (final)
+        vi = render(vietnamese_, raw_, true);
+    // Vietnamese wins over English, including after English prose. Preserve
+    // clearly German words within an established German passage.
+    // Unlisted syllables may compose when no English/German word competes.
+    // Explicit undo, personal literals and Escape remain literal overrides.
+    const bool germanContext = context_ == Language::German
+                               && german >= 300 && german > english + 60;
+    if (germanContext || (context_ == Language::German && german >= 300 && vi == raw_))
+        language = Language::German;
+    if (!germanContext && !literalUndo && vi != raw_ && validVietnamese(vi)
+        && (frequency(kVietnameseWords, vi) > 0 || (english == 0 && german == 0)))
+        return {std::move(vi), Language::Vietnamese, 0};
+
     // ponytail: unigram frequencies plus one committed word of language context;
     // add a compact contextual model if held-out mixed prose needs more accuracy.
     auto de = render(german_, raw_, final);
@@ -245,10 +277,6 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
             best = {std::move(text), candidateLanguage, score};
     };
 
-    auto vi = render(vietnamese_, raw_, false);
-    const bool literalUndo = vietnamese_.hasLiteralUndo();
-    if (final)
-        vi = render(vietnamese_, raw_, true);
     // Repeated modifiers explicitly request literal keys (uww -> uw). That
     // result need not be a Vietnamese dictionary word. Known English words
     // retain their protection above; personal literals were checked first.

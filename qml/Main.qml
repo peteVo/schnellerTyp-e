@@ -397,7 +397,7 @@ ApplicationWindow {
                             }
                             TerminalLabel {
                                 Layout.fillWidth: true
-                                text: qsTr("Telex or VNI rules used when Automatic recognizes Vietnamese.")
+                                text: qsTr("Telex or VNI rules used when Automatic finds a valid Vietnamese candidate.")
                                 color: Theme.textSecondary
                                 font.pixelSize: 12
                                 wrapMode: Text.WordWrap

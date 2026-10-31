@@ -2,9 +2,12 @@
 
 Windows is the primary release. Its tray application uses tagged Windows input
 events and checks the target window/input field before applying queued edits.
-Automatic uses offline English, Vietnamese and German word frequencies and one
-word of language context. It is a conservative statistical heuristic, not a
-guarantee of detecting the intention behind every ambiguous key sequence.
+Automatic prioritizes a valid complete Vietnamese candidate over English
+regardless of frequency or recent English context. German passages retain
+their existing contextual rules. Vietnamese dictionary entries provide
+evidence; valid unlisted syllables may compose without a competing known English
+or German spelling. Some key sequences remain ambiguous, so this cannot guarantee
+the intended spelling in every case.
 
 The optional native adapters reuse the same engine through `CompositionSession`:
 edits affect an owned preedit buffer and Space commits it. Enter, Tab, navigation

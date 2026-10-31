@@ -8,8 +8,10 @@
 
 namespace st {
 
-/// Offline word-level selection. Only the current word may be revised; a
-/// separator commits it. Unknown and ambiguous words favour literal input.
+/// Offline word-level selection. A valid complete Vietnamese candidate takes
+/// priority over English while German retains contextual rules; Escape and
+/// personal literals preserve raw input. Only the current word may be revised;
+/// a separator commits it.
 class AutoRuleEngine final : public LanguageRuleEngine {
 public:
     AutoRuleEngine();
