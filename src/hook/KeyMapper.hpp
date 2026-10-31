@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <unordered_map>
 
 namespace st {
@@ -41,6 +42,11 @@ public:
     /// Replace the character produced by one virtual key code.
     void setOverride(std::uint16_t keycode, KeyChars chars);
     void clearOverrides();
+    [[nodiscard]] std::optional<KeyChars> overrideFor(std::uint16_t keycode) const
+    {
+        const auto it = overrides_.find(keycode);
+        return it == overrides_.end() ? std::nullopt : std::optional<KeyChars>(it->second);
+    }
 
     /// Look up a libuiohook VC_ name ("VC_Y", "VC_SEMICOLON") so that layout
     /// files can be written with names instead of magic numbers. Returns 0 for

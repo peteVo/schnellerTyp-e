@@ -8,7 +8,8 @@
 //   GUI thread       Qt event loop. Owns AppController. Never blocks on the
 //                    hook: every call below is either atomic or takes a mutex
 //                    held for a few instructions.
-//   hook thread      Runs libuiohook's hook_run(). Every keystroke is
+//   hook thread      Runs libuiohook's hook_run(), hosting our direct Win32
+//                    keyboard callback on Windows. Every keystroke is
 //                    classified, fed to the rule engine and — when the platform
 //                    allows it — suppressed, all inside the OS hook callback.
 //                    On Windows that callback has a hard time budget, so it
@@ -23,8 +24,8 @@
 //
 // Ignoring our own keystrokes: before queueing an edit the service adds the
 // number of key events it is about to generate to `syntheticPending_`. The hook
-// callback decrements that counter and drops the event instead of processing
-// it. No timers, no heuristics.
+// callback decrements that counter. Windows recognizes edits by dwExtraInfo;
+// the legacy macOS/X11 backends use the count with a bounded grace period.
 
 #pragma once
 
@@ -34,6 +35,7 @@
 #include "hook/TextInjector.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -124,6 +126,10 @@ public:
     /// API in spirit — it is public only so the C shim can reach it.
     static void dispatchTrampoline(void* uiohookEvent);
 
+    /// Internal Windows hook bridge: acknowledge one tagged replacement press.
+    void acknowledgeSyntheticPress();
+    bool dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data);
+
     /// Access to the key mapper for layout overrides.
     KeyMapper&       keyMapper() noexcept { return mapper_; }
     const KeyMapper& keyMapper() const noexcept { return mapper_; }
@@ -132,6 +138,12 @@ private:
     struct Edit {
         int            backspaces = 0;
         std::u32string text;
+        std::uint16_t virtualKey = 0;
+        std::uint64_t  generation = 0;
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+        std::uintptr_t foreground = 0;
+        std::uintptr_t focus = 0;
+#endif
     };
 
     void handleEvent(void* event);
@@ -142,7 +154,8 @@ private:
     void trackChordRelease(std::uint16_t keycode, std::uint16_t mask);
     void cancelChord() noexcept { chordArmed_ = false; }
 
-    void enqueue(Edit edit);
+    void enqueue(Edit edit, std::uint64_t generation);
+    void discardQueuedEdits();
     void injectorLoop();
     void hookLoop();
     void publish(State state, std::string message);
@@ -182,6 +195,11 @@ private:
     // ignore window would swallow a large fraction of real input and the
     // engine's idea of the screen would drift apart from the screen itself.
     std::atomic_int syntheticPending_{0};
+    std::atomic_uint64_t editGeneration_{0};
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+    std::uintptr_t foregroundWindow_ = 0;
+    std::uintptr_t focusWindow_ = 0;
+#endif
 
     std::thread      hookThread_;
     std::thread      injectorThread_;

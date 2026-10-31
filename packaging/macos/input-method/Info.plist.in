@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>schnellerTyp-e-input-method</string>
+    <key>CFBundleIdentifier</key>
+    <string>org.schnellertype.inputmethod</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>schnellerTyp-e</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@PROJECT_VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@PROJECT_VERSION@</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>InputMethodConnectionName</key>
+    <string>org.schnellertype.inputmethod.Connection</string>
+    <key>InputMethodServerControllerClass</key>
+    <string>STInputMethodController</string>
+    <key>TISInputSourceID</key>
+    <string>org.schnellertype.inputmethod</string>
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array>
+        <string>en</string>
+        <string>vi</string>
+        <string>de</string>
+    </array>
+
+    <key>ComponentInputModeDict</key>
+    <dict>
+        <key>tsInputModeListKey</key>
+        <dict>
+            <key>org.schnellertype.inputmethod.Auto</key>
+            <dict>
+                <key>TISInputSourceID</key>
+                <string>org.schnellertype.inputmethod.Auto</string>
+                <key>tsInputModeDefaultStateKey</key>
+                <true/>
+                <key>tsInputModeIsVisibleKey</key>
+                <true/>
+                <key>tsInputModeScriptKey</key>
+                <string>smRoman</string>
+            </dict>
+        </dict>
+    </dict>
+    <key>tsVisibleInputModeOrderedArrayKey</key>
+    <array>
+        <string>org.schnellertype.inputmethod.Auto</string>
+    </array>
+</dict>
+</plist>

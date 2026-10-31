@@ -15,6 +15,7 @@
 //     and ignore synthesised events entirely.
 
 #include "hook/TextInjector.hpp"
+#include "hook/WindowsInputTag.hpp"
 
 #include "core/Unicode.hpp"
 
@@ -24,6 +25,7 @@
 #include <windows.h>
 
 #include <vector>
+#include <stdexcept>
 
 namespace st {
 namespace {
@@ -70,7 +72,7 @@ private:
         in.ki.wScan       = static_cast<WORD>(unit);
         in.ki.dwFlags     = KEYEVENTF_UNICODE | (keyUp ? KEYEVENTF_KEYUP : 0u);
         in.ki.time        = 0;
-        in.ki.dwExtraInfo = 0;
+        in.ki.dwExtraInfo = kWindowsInputTag;
         return in;
     }
 
@@ -82,7 +84,7 @@ private:
         in.ki.wScan       = scan;
         in.ki.dwFlags     = keyUp ? KEYEVENTF_KEYUP : 0u;
         in.ki.time        = 0;
-        in.ki.dwExtraInfo = 0;
+        in.ki.dwExtraInfo = kWindowsInputTag;
         return in;
     }
 
@@ -90,7 +92,8 @@ private:
     {
         if (inputs.empty())
             return;
-        SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
+        if (SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT)) != inputs.size())
+            throw std::runtime_error("Windows could not deliver replacement text. Typing assistance was paused.");
     }
 };
 

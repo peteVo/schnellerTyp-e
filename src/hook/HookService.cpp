@@ -12,6 +12,11 @@
 #include <cstdlib>
 #include <thread>
 
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+#include <windows.h>
+#include "hook/WindowsInputTag.hpp"
+#endif
+
 namespace st {
 namespace {
 
@@ -51,6 +56,53 @@ const bool gTrace = environmentFlag("SCHNELLERTYPE_DEBUG");
 /// it cannot swallow a keystroke from anyone typing at a human speed
 /// (240 words per minute is still one keystroke every 50 ms).
 constexpr auto kSelfEventGrace = std::chrono::milliseconds(15);
+
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+HHOOK gMetadataHook = nullptr;
+
+// Keyboard processing owns a local result. libuiohook's shared event object is
+// unsuitable for reentrant Windows callbacks; it remains the mouse/lifecycle host.
+LRESULT CALLBACK metadataHook(int code, WPARAM message, LPARAM data)
+{
+    if (code == HC_ACTION
+        && reinterpret_cast<const KBDLLHOOKSTRUCT*>(data)->dwExtraInfo == kWindowsInputTag) {
+        if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
+            if (auto* service = gActiveService.load())
+                service->acknowledgeSyntheticPress();
+        return 0;
+    }
+    if (code == HC_ACTION)
+        if (auto* service = gActiveService.load())
+            if (service->dispatchWindowsKey(message, static_cast<std::uintptr_t>(data)))
+                return 1;
+    return CallNextHookEx(nullptr, code, message, data);
+}
+
+struct FocusTarget {
+    std::uintptr_t foreground;
+    std::uintptr_t focus;
+};
+
+[[nodiscard]] FocusTarget foregroundFocus()
+{
+    const HWND foreground = GetForegroundWindow();
+    const DWORD thread = foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+    GUITHREADINFO info{};
+    info.cbSize = static_cast<DWORD>(sizeof(info));
+    const HWND focus = thread && GetGUIThreadInfo(thread, &info) && info.hwndFocus
+                           ? info.hwndFocus : foreground;
+    return {reinterpret_cast<std::uintptr_t>(foreground),
+            reinterpret_cast<std::uintptr_t>(focus)};
+}
+
+[[nodiscard]] bool isCurrentProcessWindow(std::uintptr_t window)
+{
+    DWORD process = 0;
+    if (window)
+        GetWindowThreadProcessId(reinterpret_cast<HWND>(window), &process);
+    return process == GetCurrentProcessId();
+}
+#endif
 
 #if defined(SCHNELLERTYPE_UIOHOOK_DISPATCH_USERDATA)
 void dispatchProc(uiohook_event* const event, void* /*userData*/)
@@ -93,6 +145,14 @@ void dispatchProc(uiohook_event* const event)
     }
 }
 
+void subtractPending(std::atomic_int& pending, int count)
+{
+    int current = pending.load(std::memory_order_acquire);
+    while (count > 0 && !pending.compare_exchange_weak(
+               current, current > count ? current - count : 0,
+               std::memory_order_acq_rel, std::memory_order_acquire)) {}
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -106,6 +166,148 @@ HookService::HookService() : injector_(TextInjector::create())
 }
 
 HookService::~HookService() { stop(); }
+
+void HookService::acknowledgeSyntheticPress()
+{
+    subtractPending(syntheticPending_, 1);
+}
+
+bool HookService::dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data)
+{
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+    const auto& native = *reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
+    const bool pressed = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+    const bool released = message == WM_KEYUP || message == WM_SYSKEYUP;
+    if (!pressed && !released)
+        return false;
+    const auto vk = native.vkCode;
+    auto down = [&](int code) {
+        return native.vkCode == static_cast<DWORD>(code) ? pressed
+                                                       : (GetAsyncKeyState(code) & 0x8000) != 0;
+    };
+    const bool shift = down(VK_LSHIFT) || down(VK_RSHIFT);
+    const bool control = down(VK_LCONTROL) || down(VK_RCONTROL);
+    const bool alt = down(VK_LMENU) || down(VK_RMENU);
+    const bool meta = down(VK_LWIN) || down(VK_RWIN);
+    std::uint16_t mask = 0;
+    if (shift) mask |= MASK_SHIFT_L;
+    if (control) mask |= MASK_CTRL_L;
+    if (alt) mask |= MASK_ALT_L;
+    if (meta) mask |= MASK_META_L;
+    std::uint16_t modifier = 0;
+    switch (vk) {
+    case VK_LSHIFT: case VK_RSHIFT: modifier = VC_SHIFT_L; break;
+    case VK_LCONTROL: case VK_RCONTROL: modifier = VC_CONTROL_L; break;
+    case VK_LMENU: case VK_RMENU: modifier = VC_ALT_L; break;
+    case VK_LWIN: case VK_RWIN: modifier = VC_META_L; break;
+    }
+    if (released) {
+        trackChordRelease(modifier, mask);
+        return false;
+    }
+
+    const auto target = foregroundFocus();
+    if (!target.foreground || isCurrentProcessWindow(target.foreground)) {
+        resetEngineState();
+        return false;
+    }
+    if (target.foreground != foregroundWindow_ || target.focus != focusWindow_) {
+        discardQueuedEdits();
+        foregroundWindow_ = target.foreground;
+        focusWindow_ = target.focus;
+        resetEngineState();
+    }
+    trackChordPress(modifier, mask);
+    if (!enabled_.load())
+        return false;
+    if (vk == VK_CAPITAL)
+        mapper_.setCapsLock(!mapper_.capsLock());
+    KeyEvent key;
+    key.ctrl = control;
+    key.alt = alt;
+    key.shift = shift;
+    key.meta = meta;
+    key.rawCode = static_cast<std::uint16_t>(vk);
+    if (modifier || vk == VK_CAPITAL || vk == VK_NUMLOCK || vk == VK_SCROLL) {
+        key.kind = KeyKind::Modifier;
+    } else {
+        switch (vk) {
+        case VK_BACK: key.kind = KeyKind::Backspace; break;
+        case VK_RETURN: key.kind = KeyKind::Enter; break;
+        case VK_TAB: key.kind = KeyKind::Tab; break;
+        case VK_ESCAPE: key.kind = KeyKind::Escape; break;
+        case VK_SPACE: key.kind = KeyKind::Space; key.character = U' '; break;
+        case VK_LEFT: case VK_RIGHT: case VK_UP: case VK_DOWN: case VK_HOME:
+        case VK_END: case VK_PRIOR: case VK_NEXT: case VK_DELETE: case VK_INSERT:
+            key.kind = KeyKind::Navigation; break;
+        default: {
+            if (const auto override = mapper_.overrideFor(static_cast<std::uint16_t>(native.scanCode))) {
+                const bool upper = shift ^ (mapper_.capsLock() && unicode::isAsciiAlpha(override->plain));
+                key.kind = KeyKind::Character;
+                key.character = upper ? override->shift : override->plain;
+                break;
+            }
+            BYTE state[256]{};
+            GetKeyboardState(state);
+            state[VK_SHIFT] = shift ? 0x80 : 0;
+            state[VK_CONTROL] = control ? 0x80 : 0;
+            state[VK_MENU] = alt ? 0x80 : 0;
+            state[VK_CAPITAL] = mapper_.capsLock() ? 1 : 0;
+            state[vk & 0xff] |= 0x80;
+            WCHAR text[4]{};
+            const DWORD thread = GetWindowThreadProcessId(reinterpret_cast<HWND>(target.foreground), nullptr);
+            const int count = ToUnicodeEx(vk, native.scanCode, state, text, 4, 4,
+                                          GetKeyboardLayout(thread));
+            if (count == 1 && text[0] >= 0x20) {
+                key.kind = KeyKind::Character;
+                key.character = text[0];
+            }
+            break;
+        }
+        }
+    }
+
+    const auto generation = editGeneration_.load(std::memory_order_acquire);
+    EngineResult result;
+    try {
+        std::scoped_lock lock(engineMutex_);
+        if (!engine_)
+            return false;
+        result = engine_->processKey(key);
+    } catch (const std::exception& error) {
+        enabled_.store(false);
+        discardQueuedEdits();
+        resetEngineState();
+        publish(State::Failed, error.what());
+        return false;
+    }
+    if (result.handled) {
+        if (!result.isNoop())
+            enqueue(Edit{result.backspaces, std::move(result.text)}, generation);
+        return true;
+    }
+    if (!key.isChord() && syntheticPending_.load(std::memory_order_acquire) > 0) {
+        if (key.kind == KeyKind::Character || key.kind == KeyKind::Space) {
+            enqueue(Edit{0, std::u32string(1, key.character)}, generation);
+            return true;
+        }
+        if (key.kind == KeyKind::Backspace) {
+            enqueue(Edit{1, {}}, generation);
+            return true;
+        }
+        if (key.kind == KeyKind::Enter || key.kind == KeyKind::Tab || key.kind == KeyKind::Navigation) {
+            Edit edit;
+            edit.virtualKey = static_cast<std::uint16_t>(vk);
+            enqueue(std::move(edit), generation);
+            return true;
+        }
+    }
+#else
+    (void)message;
+    (void)data;
+#endif
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -142,11 +344,13 @@ void HookService::publish(State state, std::string message)
 void HookService::setEnabled(bool enabled)
 {
     enabled_.store(enabled);
+    discardQueuedEdits();
     resetEngineState();
 }
 
 void HookService::setEngine(EnginePtr engine)
 {
+    discardQueuedEdits();
     std::scoped_lock lock(engineMutex_);
     engine_ = std::move(engine);
     if (engine_)
@@ -214,6 +418,13 @@ void HookService::hookLoop()
 
     const int code = hook_run();
 
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+    if (gMetadataHook) {
+        UnhookWindowsHookEx(gMetadataHook);
+        gMetadataHook = nullptr;
+    }
+#endif
+
     running_.store(false);
     if (code == UIOHOOK_SUCCESS || stopRequested_.load())
         publish(State::Stopped, "Keyboard hook stopped.");
@@ -235,6 +446,15 @@ void HookService::handleEvent(void* rawEvent)
 
     switch (event->type) {
     case EVENT_HOOK_ENABLED:
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+        gMetadataHook = SetWindowsHookExW(WH_KEYBOARD_LL, metadataHook, GetModuleHandleW(nullptr), 0);
+        if (!gMetadataHook) {
+            enabled_.store(false);
+            publish(State::Failed, "Windows could not initialise safe keyboard capture.");
+            return;
+        }
+        mapper_.setCapsLock((GetKeyState(VK_CAPITAL) & 1) != 0);
+#endif
         running_.store(true);
         publish(State::Running, "Keyboard hook active.");
         return;
@@ -249,19 +469,24 @@ void HookService::handleEvent(void* rawEvent)
         // what is on screen. A click also ends any chord in progress: a
         // Ctrl+Shift+click is a selection gesture, not a language switch.
         cancelChord();
+        discardQueuedEdits();
         resetEngineState();
         return;
 
     case EVENT_KEY_PRESSED:
+#if !defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
         handleKeyPressed(rawEvent);
+#endif
         return;
 
     case EVENT_KEY_RELEASED:
         // Releases are otherwise of no interest: the engines are driven by
         // presses, and the injectors never synthesise a modifier, so nothing
         // here can be an event of our own.
+#if !defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
         trackChordRelease(static_cast<std::uint16_t>(event->data.keyboard.keycode),
                           static_cast<std::uint16_t>(event->mask));
+#endif
         return;
 
     default:
@@ -278,10 +503,14 @@ void HookService::handleKeyPressed(void* rawEvent)
                      unsigned(event->data.keyboard.keycode), syntheticPending_.load());
 
     // Drop the key events we generated ourselves.
+#if !defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
     if (syntheticPending_.load(std::memory_order_acquire) > 0) {
         syntheticPending_.fetch_sub(1, std::memory_order_acq_rel);
         return;
     }
+#endif
+
+    const std::uint64_t generation = editGeneration_.load(std::memory_order_acquire);
 
     // Before the master switch, not after: switching the IME back on is one of
     // the things the chord exists to do, and it cannot do that from a branch
@@ -306,25 +535,26 @@ void HookService::handleKeyPressed(void* rawEvent)
         result = engine_->processKey(key);
     }
 
-    if (!result.handled)
+    if (!result.handled) {
         return;
+    }
 
     if (platform::canSuppressEvents()) {
-        // Windows / macOS: consume the keystroke, then perform the edit. Note
+        // Legacy macOS: consume the keystroke, then perform the edit. Note
         // that a "swallow" result (an escape key) has no edit at all, which is
         // exactly what the flag below achieves on its own.
         event->reserved |= 0x01;
         if (result.isNoop())
             return;
-        enqueue(Edit{result.backspaces, std::move(result.text)});
+        enqueue(Edit{result.backspaces, std::move(result.text)}, generation);
     } else {
         // X11: XRecord observes, it cannot consume, so the character the user
         // typed has already reached the application. Erase it along with
         // whatever else this edit replaces.
         if (result.isNoop())
-            enqueue(Edit{1, {}});  // swallow-equivalent: rub out the stray char
+            enqueue(Edit{1, {}}, generation);  // swallow-equivalent: rub out the stray char
         else
-            enqueue(Edit{result.backspaces + 1, std::move(result.text)});
+            enqueue(Edit{result.backspaces + 1, std::move(result.text)}, generation);
     }
 }
 
@@ -475,21 +705,42 @@ void HookService::setShortcutCallback(ShortcutCallback callback)
 
 // ---------------------------------------------------------------------------
 
-void HookService::enqueue(Edit edit)
+void HookService::enqueue(Edit edit, std::uint64_t generation)
 {
     // Charge the counter before the events exist, so the hook can never see one
     // of them while the counter is still zero. Only presses are counted: the
     // hook only inspects EVENT_KEY_PRESSED.
-    const int presses = TextInjector::keyEventCount(edit.backspaces, edit.text) / 2;
+    const int presses = TextInjector::keyEventCount(edit.backspaces, edit.text) / 2 + (edit.virtualKey ? 1 : 0);
+    edit.generation = generation;
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+    edit.foreground = foregroundWindow_;
+    edit.focus = focusWindow_;
+#endif
     if (gTrace)
         std::fprintf(stderr, "[st] edit bs=%d text=%s presses=%d\n", edit.backspaces,
                      unicode::toUtf8(edit.text).c_str(), presses);
-    syntheticPending_.fetch_add(presses, std::memory_order_acq_rel);
     {
         std::scoped_lock lock(queueMutex_);
+        if (generation != editGeneration_.load(std::memory_order_acquire))
+            return;
+        syntheticPending_.fetch_add(presses, std::memory_order_acq_rel);
         queue_.push_back(std::move(edit));
     }
     queueCv_.notify_one();
+}
+
+void HookService::discardQueuedEdits()
+{
+    editGeneration_.fetch_add(1, std::memory_order_acq_rel);
+    {
+        std::scoped_lock lock(queueMutex_);
+        int canceledPresses = 0;
+        for (const Edit& edit : queue_)
+            canceledPresses += TextInjector::keyEventCount(edit.backspaces, edit.text) / 2 + (edit.virtualKey ? 1 : 0);
+        queue_.clear();
+        if (canceledPresses > 0)
+            subtractPending(syntheticPending_, canceledPresses);
+    }
 }
 
 void HookService::injectorLoop()
@@ -507,8 +758,55 @@ void HookService::injectorLoop()
             more = !queue_.empty();
         }
 
-        if (injector_)
-            injector_->applyEdit(edit.backspaces, edit.text);
+        const int presses = TextInjector::keyEventCount(edit.backspaces, edit.text) / 2 + (edit.virtualKey ? 1 : 0);
+        if (edit.generation != editGeneration_.load(std::memory_order_acquire)) {
+            if (presses > 0)
+                subtractPending(syntheticPending_, presses);
+            continue;
+        }
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+        const FocusTarget target = foregroundFocus();
+        if (target.foreground != edit.foreground || target.focus != edit.focus
+            || isCurrentProcessWindow(target.foreground)) {
+            resetEngineState();
+            if (presses > 0)
+                subtractPending(syntheticPending_, presses);
+            continue;
+        }
+        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) || (GetAsyncKeyState(VK_MENU) & 0x8000)
+            || (GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000)) {
+            // A delayed Backspace must not become Ctrl+Backspace when the user
+            // begins a shortcut while replacement text is still queued.
+            discardQueuedEdits();
+            resetEngineState();
+            subtractPending(syntheticPending_, presses);
+            continue;
+        }
+#endif
+        try {
+#if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+            if (edit.virtualKey) {
+                INPUT inputs[2]{};
+                for (auto& input : inputs) {
+                    input.type = INPUT_KEYBOARD;
+                    input.ki.wVk = edit.virtualKey;
+                    input.ki.dwExtraInfo = kWindowsInputTag;
+                }
+                inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+                if (SendInput(2, inputs, sizeof(INPUT)) != 2)
+                    throw std::runtime_error("Windows could not deliver a queued key. Typing assistance was paused.");
+            } else
+#endif
+            if (injector_)
+                injector_->applyEdit(edit.backspaces, edit.text);
+        } catch (const std::exception& error) {
+            enabled_.store(false);
+            discardQueuedEdits();
+            syntheticPending_.store(0);
+            resetEngineState();
+            publish(State::Failed, error.what());
+            continue;
+        }
 
         if (more)
             continue;  // a burst is still draining; the counter covers it
@@ -519,8 +817,10 @@ void HookService::injectorLoop()
         // permanently too high and silently eat one real keystroke after every
         // edit from then on. Once the queue is empty and the platform has had
         // time to deliver, any residue is drift, so clear it.
+#if !defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
         std::this_thread::sleep_for(kSelfEventGrace);
         syntheticPending_.store(0, std::memory_order_release);
+#endif
     }
 }
 
