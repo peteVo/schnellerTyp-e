@@ -19,11 +19,17 @@ In Vietnamese Telex mode, `w` makes `ư`, `ww` types a literal `w`, and `uww`
 types `uw`. Automatic also resolves delayed Telex input `nuawx` and `nuwax`
 to `nữa`; literal undo remains literal after Space.
 
-Automatic compares literal input with Vietnamese and German candidates using
-80,403 offline word-frequency entries and a small amount of language context.
-Known English words, unknown names and ambiguous words favour literal input.
-This is a conservative statistical heuristic; identical keys can express
-different intentions, so it cannot promise perfect automatic interpretation.
+Automatic gives a valid complete Vietnamese candidate priority over English,
+regardless of frequency or recent English context. Vietnamese dictionary
+entries provide evidence; valid syllables absent from the list can still
+compose when the raw spelling has no known English or German match. German passages
+retain their existing contextual rules.
+This lets `teen`, `cars` and `is` become `tên`, `cá` and `í` by preference,
+while the specific English name `New York` stays literal. `heens` becomes
+`hến`, including after English words. Some spellings remain uncertain because
+the same keys can express different intentions; press **Escape before Space**
+or add a word under **Preferences → Keep these words literal** to recover the
+original spelling.
 
 - Press **Escape before Space** to restore the original keys of the current word.
 - Add names or technical terms under **Preferences → Keep these words literal**.
@@ -38,11 +44,13 @@ keystrokes; leave SCHNELLERTYPE_DEBUG unset for normal use.
 
 ## Desktop interface
 
-**Typing** contains the mode selector and a live practice field using the real
-configured engine. **Preferences** contains Telex/VNI, German rules, personal
+The compact desktop window uses a terminal-inspired monochrome style with a
+status and enable row, three equal-width tabs, and a quiet footer. **Typing**
+puts mode selection, raw keystrokes and a live preview from the real configured
+engine together. **Preferences** contains Telex/VNI, German rules, personal
 literal words and shortcuts. **Setup** contains availability, permissions and
-custom-rule recovery. The interface follows the system light/dark appearance
-and supports keyboard navigation.
+custom-rule recovery. Colors follow the system light/dark appearance, and the
+controls support keyboard navigation.
 
 The app stays in the tray when its settings window closes. Left-click the tray
 to pause/resume, double-click for settings, and right-click for its menu.

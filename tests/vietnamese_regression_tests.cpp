@@ -62,6 +62,11 @@ int runCorpus(const char* suite, Engine& engine, const Case (&corpus)[N])
 
 const Case kVietnamese[] = {
     {"ww-undo", U"ww", U"w"}, {"uww-undo", U"uww", U"uw"},
+    {"open-horn", U"thuowr huow ", U"thuở huơ "},
+    {"open-horn-early", U"thuwowr", U"thuở"},
+    {"open-horn-undo", U"thuoww ", U"thuow "},
+    {"horn-to-closed", U"thuowngf", U"thường"},
+    {"horn-to-glide", U"huowu", U"hươu"},
     {"upper-WW", U"WW", U"W"}, {"upper-UWW", U"UWW", U"UW"},
     {"tw-undo", U"tw", U"tư"}, {"tww-undo", U"tww", U"tw"},
     {"thw-undo", U"thw", U"thư"}, {"thww-undo", U"thww", U"thw"},
@@ -95,7 +100,7 @@ const Case kVietnamese[] = {
 };
 
 const Case kAutomatic[] = {
-    {"literal-w-keeps-neutral-context", U"ww cars hats moon ", U"w cars hats moon "},
+    {"Vietnamese-priority-after-w", U"ww cars hats moon ", U"w cá hát môn "},
     {"ww-undo", U"ww", U"w"}, {"uww-undo", U"uww", U"uw"},
     {"upper-WW", U"WW", U"W"}, {"tw-undo", U"tw", U"tư"},
     {"tww-undo", U"tww", U"tw"}, {"thww-undo", U"thww", U"thw"},
@@ -116,7 +121,7 @@ const Case kAutomatic[] = {
     {"sentence", U"Tooi muoons aawn nuawx.", U"Tôi muốn ăn nữa."},
     {"english-away", U"away ", U"away "}, {"english-tools", U"tools ", U"tools "},
     {"english-www", U"www ", U"www "}, {"german-context", U"Die Strasse ist schoen. ", U"Die Straße ist schön. "},
-    {"mixed-context", U"The Strasse is schoen, then nuawx.", U"The Straße is schön, then nữa."},
+    {"mixed-context", U"The Strasse is schoen, then nuawx.", U"The Straße í schön, then nữa."},
     {"backspace", U"nuawx\b", U"nữ"}, {"space-two", U"muaw nuawx", U"mưa nữa"},
     {"tone-varied", U"quas toasn Vieejt", U"quá toán Việt"},
     {"dd", U"dduwowngf", U"đường"}, {"invalid-tone", U"batf", U"batf"},
@@ -126,6 +131,11 @@ const Case kAutomatic[] = {
 };
 
 const Case kVni[] = {
+    {"open-horn", U"thuo73", U"thuở"},
+    {"open-horn-early", U"thu7o73", U"thuở"},
+    {"open-horn-undo", U"thuo77 ", U"thuo7 "},
+    {"horn-to-closed", U"thuo7ng2", U"thường"},
+    {"horn-to-glide", U"huo7u", U"hươu"},
     {"nua7", U"nua7", U"nưa"}, {"nu7a4", U"nu7a4", U"nữa"},
     {"nua74", U"nua74", U"nữa"}, {"nu7a3", U"nu7a3", U"nửa"},
     {"nua73", U"nua73", U"nửa"}, {"cu7u1", U"cu7u1", U"cứu"},

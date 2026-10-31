@@ -132,6 +132,12 @@ std::vector<std::size_t> VietnameseRuleEngine::markTargets(Mark mark) const
                 // ...unless "u" belongs to the "qu" onset (quở, not qưở).
                 if (p.toneScanBegin > i)
                     break;
+                // An open uo becomes uơ (thuở, huơ); a following letter
+                // completes ươ (thường, hươu) when the word grows.
+                if (letters_[i + 1].base == U'o' && i + 2 == letters_.size()) {
+                    targets.push_back(i + 1);
+                    return targets;
+                }
                 targets.push_back(i);
                 if (letters_[i + 1].base == U'o')
                     targets.push_back(i + 1);
@@ -293,6 +299,13 @@ void VietnameseRuleEngine::appendLiteral(char32_t c)
 
 EngineResult VietnameseRuleEngine::finish(const std::u32string& before, char32_t typedChar)
 {
+    const auto parts = vn::split(letters_);
+    for (std::size_t i = parts.toneScanBegin; i + 1 < parts.nucleusEnd; ++i) {
+        if (letters_[i].base == U'u' && letters_[i + 1].base == U'o'
+            && letters_[i + 1].mark == Mark::Horn
+            && (letters_[i].mark == Mark::None || letters_[i].mark == Mark::Horn))
+            letters_[i].mark = i + 2 == letters_.size() ? Mark::None : Mark::Horn;
+    }
     emitted_ = vn::render(letters_, tone_, opts_.modernTone);
 
     const std::size_t common = unicode::commonPrefix(before, emitted_);

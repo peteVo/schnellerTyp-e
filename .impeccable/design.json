@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T00:00:00+01:00",
+  "title": "Design System: schnellerTyp-e",
+  "extensions": {
+    "typographyMeta": {
+      "display": { "displayName": "Product and page headings", "purpose": "Compact identity and hierarchy." },
+      "body": { "displayName": "Monospace body", "purpose": "Control text and supporting copy; Qt uses platform fallback outside Windows." },
+      "label": { "displayName": "Utility labels", "purpose": "Small metadata and field markers." }
+    },
+    "breakpoints": [
+      { "name": "minimum-window", "value": "640 × 560px" },
+      { "name": "default-window", "value": "820 × 740px" },
+      { "name": "content-column", "value": "640px" }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Omarchy Writing Utility",
+    "overview": "A multilingual typing tool expressed through a compact, monochrome terminal grammar: clear labels, thin rules, flat surfaces, and direct controls. It borrows the restraint and native-control character of the Cyberghost Omarchy panel while keeping its own visual identity and real Qt behavior. Consolas on Windows and the platform monospace fallback elsewhere give the interface a consistent typographic voice.\n\nThe visual language supports one short path: choose a typing mode, enter raw keystrokes, inspect the actual engine preview, then move to preferences or setup when needed. Color remains quiet; the warm amber is reserved for a running state in dark mode. The system palette selects a neutral light or dark set.",
+    "keyCharacteristics": [
+      "Monospace, compact, and utility-led.",
+      "Native Qt controls with square corners and thin borders.",
+      "Real input and engine output are the primary work surface."
+    ],
+    "rules": [
+      { "name": "The State-Only Amber Rule", "body": "Amber marks the connected/running status in dark mode; it is not a general action color. Primary actions use the neutral ink treatment.", "section": "colors" },
+      { "name": "The Type-By-Size Rule", "body": "Keep the monospace family consistent; create hierarchy through size, weight, and spacing.", "section": "typography" },
+      { "name": "The Flat Surface Rule", "body": "Do not introduce shadow-based depth; separate regions with tonal changes and one-pixel rules.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use the system-selected neutral light or dark palette from Theme.qml.",
+      "Do use Consolas on Windows and the platform monospace fallback on Linux.",
+      "Do keep the typing flow centered on mode, raw keystrokes, and actual transformed output.",
+      "Do use native Qt controls and preserve keyboard focus, accessibility names, disabled states, and text selection.",
+      "Do express service state in words as well as color."
+    ],
+    "donts": [
+      "Don't use amber as a general action color.",
+      "Don't add fake terminal commands, CRT effects, glow, or imagery.",
+      "Don't replace real Qt controls with decorative mock controls."
+    ]
+  }
+}

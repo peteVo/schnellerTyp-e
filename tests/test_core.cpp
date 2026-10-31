@@ -269,10 +269,10 @@ void testAutomatic()
     st::AutoRuleEngine engine;
     check("auto/requested-example", U"hoom nay tooi ddeens New York ",
           U"hôm nay tôi đến New York ", engine);
-    check("auto/english", U"I have been using new tools at work. ",
-          U"I have been using new tools at work. ", engine);
-    check("auto/english-triggers", U"as is or of for were own our power flower street class ",
-          U"as is or of for were own our power flower street class ", engine);
+    check("auto/Vietnamese-priority", U"I have been using new tools at work. ",
+          U"I have bên using new tools at work. ", engine);
+    check("auto/Vietnamese-priority-triggers", U"as is or of for were own our power flower street class ",
+          U"á í or of for were ơn our power flower street class ", engine);
     check("auto/names", U"New York Berlin Microsoft Firefox Robert ",
           U"New York Berlin Microsoft Firefox Robert ", engine);
     check("auto/vietnamese", U"tooi yeeu tieengs Vieejt ", U"tôi yêu tiếng Việt ", engine);
