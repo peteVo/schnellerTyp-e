@@ -2,6 +2,7 @@
 #pragma once
 
 #include "core/CompositionSession.hpp"
+#include "Fcitx5Config.hpp"
 
 #include <fcitx/event.h>
 #include <fcitx/inputcontextproperty.h>
@@ -22,6 +23,8 @@ public:
 class Engine final : public fcitx::InputMethodEngineV2 {
 public:
     explicit Engine(fcitx::Instance *instance);
+    const fcitx::Configuration *getConfig() const override;
+    void setConfig(const fcitx::RawConfig &config) override;
 
     void keyEvent(const fcitx::InputMethodEntry &entry, fcitx::KeyEvent &event) override;
     void activate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) override;
@@ -37,6 +40,7 @@ private:
     void discard(fcitx::InputContext *ic) noexcept;
 
     fcitx::Instance *instance_;
+    mutable Config config_;
     fcitx::SimpleInputContextPropertyFactory<ContextState> stateFactory_;
     std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>> focusOutHandler_;
     std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>> capabilityHandler_;

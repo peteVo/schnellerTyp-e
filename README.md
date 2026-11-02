@@ -66,6 +66,10 @@ zip and its dependencies. tools/package-windows.ps1 is the MSVC packaging path.
 
 Optional native adapters use Fcitx 5 on Linux and InputMethodKit on macOS. They
 share the language engine and saved built-in preferences with the desktop app.
+The Fcitx addon provides its own standard Fcitx configuration dialog, so
+Omarchy users can configure built-in modes without building the legacy app.
+See the [native Arch package guide](packaging/linux/fcitx5/README.md) for
+installation, upgrades, rollback and the isolated desktop test harness.
 See [PLATFORMS.md](PLATFORMS.md) for build flags, installation and verification
 limits. The legacy Linux/X11 and macOS event-injection backends remain available.
 The X11 backend is not a native Wayland solution. Avoid running a native input

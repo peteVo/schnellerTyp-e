@@ -18,7 +18,11 @@ is only one processor of your keystrokes.
 
 Prerequisites: a C++20 compiler, CMake 3.21+, Fcitx 5 development files and Qt 6.4+
 Core. The native module does not need libuiohook, XTest or Qt Quick. The optional
-settings panel uses Qt Quick and can be launched with `--no-hook`.
+legacy settings panel uses Qt Quick and can be launched with `--no-hook`.
+The addon also exposes built-in preferences through Fcitx's standard
+configuration dialog, requiring no legacy app. The
+[native Arch package guide](packaging/linux/fcitx5/README.md) is the preferred
+installation/upgrade path on Omarchy.
 
 ```sh
 cmake -S . -B build-native -DSCHNELLERTYPE_BUILD_APP=OFF \
@@ -28,13 +32,24 @@ ctest --test-dir build-native --output-on-failure
 sudo cmake --install build-native
 ```
 
-Restart the existing Fcitx service, open its configuration tool, disable the
+If Fcitx is already running, restart it through the desktop's existing service.
+If it is not running, start `fcitx5 -d` once for the current desktop session.
+Open `fcitx5-configtool`, disable the
 "Only show current language" filter if needed, and add **schnellerTyp-e**. Select
 that input method once; Automatic interprets words within that one source. On
-Omarchy use its existing Fcitx service rather than adding a second autostart.
+Omarchy reuse its existing Fcitx service/autostart when present.
 The addon uses per-field composition and bypasses password/sensitive fields
 when the client reports those capabilities. Toolkit support must be checked in
 your actual browser/editor applications on Wayland and XWayland.
+
+The native build includes `fcitx5-composition`: an in-memory client with an
+isolated settings directory and all unrelated desktop addons disabled. It loads
+the built shared addon through Fcitx's actual loader and exercises its callbacks,
+including UTF-8 cursor placement, one-time focus-out commits, editing,
+shortcuts, field isolation, sensitive-field
+transitions, and saved settings. It does not establish Wayland protocol or
+browser/editor compatibility. See [VERIFICATION.md](VERIFICATION.md) for the
+local desktop results and compatibility limits.
 
 Use the existing X11 tray app as a separate fallback; its erase-and-retype
 behavior is not native Wayland support. IBus integration is not included.

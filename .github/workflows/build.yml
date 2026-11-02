@@ -17,10 +17,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev
-      - run: cmake -S . -B build -G Ninja -DSCHNELLERTYPE_BUILD_APP=OFF -DSCHNELLERTYPE_BUILD_FCITX5=ON -DSCHNELLERTYPE_WERROR=ON
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev libgtk-3-dev libwayland-dev libxkbcommon-dev
+      - run: cmake -S . -B build -G Ninja -DSCHNELLERTYPE_BUILD_APP=OFF -DSCHNELLERTYPE_BUILD_FCITX5=ON -DSCHNELLERTYPE_WERROR=ON -DSCHNELLERTYPE_BUILD_LINUX_DESKTOP_PROBES=ON
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
+      - run: python3 -m py_compile tools/verify-linux-desktop.py tools/verify-omarchy-installed.py
 
   macos-input-method:
     runs-on: macos-latest

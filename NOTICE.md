@@ -49,6 +49,11 @@ does not change the MIT license of independently written application code.
 The optional Linux addon dynamically uses Fcitx 5 (LGPL-2.1-or-later). The
 optional macOS input source uses Apple's InputMethodKit/AppKit frameworks.
 
+The opt-in Linux desktop test keyboard uses the MIT-licensed
+`virtual-keyboard-unstable-v1.xml` protocol from swaywm/wlroots. Its original
+copyright and license notice are retained in `tests/virtual-keyboard-unstable-v1.xml`.
+The protocol and scratch test programs are not installed by the Fcitx package.
+
 | Component | Licence | Linked how |
 |---|---|---|
 | Qt 6 (Core, Gui, Qml, Quick, QuickControls2, Widgets) | LGPL-3.0 or commercial | dynamically |

@@ -1,4 +1,30 @@
-# Cutting a Windows release
+# Cutting a release
+
+## Omarchy / Fcitx 5 patch release
+
+Update `project(VERSION ...)` in `CMakeLists.txt` and `pkgver` in
+`packaging/linux/fcitx5/PKGBUILD`, resetting `pkgrel` to 1 for a new version.
+Update `RELEASE-NOTES.md` and the installation filename in the native setup
+guide. Build with `makepkg -f` from `packaging/linux/fcitx5`; this runs all six
+native suites before producing the package and optional debug package.
+
+Create a versioned directory under `dist/`, copy the packages and the final
+synthetic verification reports into it, and create `SHA256SUMS` using basenames
+so downloads can be checked from any directory. Keep private logs, personal
+configuration and failed diagnostic reports out of release uploads. Attach the
+setup guide and verification notes, including tested input paths and known
+limits. A version-only rebuild does not establish new desktop compatibility.
+
+Commit the source, push the release commit and check its GitHub Actions run.
+After all required jobs pass, create and push an annotated version tag at that
+exact commit. Publish with `gh release create <tag> --verify-tag --notes-file
+RELEASE-NOTES.md`, uploading only the versioned release assets. Verify the
+published target commit, asset names and checksums. Do not relabel an old
+Windows/macOS binary as the new version.
+
+The Windows packaging workflow below is retained for Windows releases.
+
+## Cutting a Windows release
 
 The goal: your friend clicks one link, unzips, double-clicks, and it works —
 with no Qt, no Visual Studio and no admin rights on their machine.

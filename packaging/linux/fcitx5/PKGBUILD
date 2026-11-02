@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MIT
+# Local working-tree package: cd packaging/linux/fcitx5 && makepkg -f
+pkgname=schnellertype-e-fcitx5
+pkgver=0.2.2
+pkgrel=1
+pkgdesc='Offline English, Vietnamese and German typing assistant for Fcitx 5'
+arch=('x86_64' 'aarch64')
+url='https://github.com/peteVo/schnellerTyp-e'
+license=('MIT' 'CC-BY-SA-4.0' 'CC0-1.0')
+depends=('fcitx5' 'qt6-base')
+makedepends=('cmake' 'ninja' 'gcc')
+optdepends=('fcitx5-gtk: GTK and Chromium XWayland integration'
+            'fcitx5-qt: Qt integration')
+source=()
+sha256sums=()
+
+build() {
+    cmake -S "${startdir}/../../.." -B "${srcdir}/build" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+        -DSCHNELLERTYPE_BUILD_APP=OFF -DSCHNELLERTYPE_BUILD_FCITX5=ON \
+        -DSCHNELLERTYPE_WERROR=ON
+    cmake --build "${srcdir}/build" --parallel 4
+}
+
+check() {
+    ctest --test-dir "${srcdir}/build" --output-on-failure
+}
+
+package() {
+    DESTDIR="${pkgdir}" cmake --install "${srcdir}/build"
+    install -Dm644 "${startdir}/../../../LICENSE" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

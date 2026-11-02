@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(schnellerTyp-e
-    VERSION 0.2.1
+    VERSION 0.2.2
     DESCRIPTION "Cross-platform input method editor and text transformation tool"
     LANGUAGES CXX
 )
@@ -33,6 +33,7 @@ option(SCHNELLERTYPE_BUILD_APP "Build the Qt desktop app and legacy hook backend
 option(SCHNELLERTYPE_BUILD_FCITX5 "Build the native Linux Fcitx 5 input method" OFF)
 option(SCHNELLERTYPE_BUILD_MACOS_INPUT_METHOD "Build the native macOS input source" OFF)
 option(SCHNELLERTYPE_BUILD_INTERACTIVE_TESTS "Build the Windows scratch-window hook probe" OFF)
+option(SCHNELLERTYPE_BUILD_LINUX_DESKTOP_PROBES "Build scratch editors for opt-in Linux desktop tests" OFF)
 
 if(MSVC)
     set(SCHNELLERTYPE_WARNINGS /W4 /permissive- /utf-8)
@@ -407,7 +408,8 @@ if(SCHNELLERTYPE_BUILD_FCITX5)
     endif()
     find_package(Fcitx5Core REQUIRED)
     include(GNUInstallDirs)
-    add_library(schnellerTyp-e-fcitx5 MODULE src/platform/fcitx5/Fcitx5Engine.cpp)
+    add_library(schnellerTyp-e-fcitx5 MODULE src/platform/fcitx5/Fcitx5Engine.cpp
+        src/platform/fcitx5/Fcitx5Config.cpp)
     target_link_libraries(schnellerTyp-e-fcitx5 PRIVATE schnellertype_native Fcitx5::Core)
     target_compile_options(schnellerTyp-e-fcitx5 PRIVATE ${SCHNELLERTYPE_WARNINGS})
     set_target_properties(schnellerTyp-e-fcitx5 PROPERTIES AUTOMOC OFF PREFIX "")
@@ -457,6 +459,35 @@ endif()
 # Tests
 # ---------------------------------------------------------------------------
 
+if(SCHNELLERTYPE_BUILD_LINUX_DESKTOP_PROBES)
+    if(NOT UNIX OR APPLE)
+        message(FATAL_ERROR "Linux desktop probes require Linux.")
+    endif()
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+    pkg_check_modules(WAYLAND REQUIRED IMPORTED_TARGET wayland-client xkbcommon)
+    find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+    set(VIRTUAL_KEYBOARD_XML "${CMAKE_CURRENT_SOURCE_DIR}/tests/virtual-keyboard-unstable-v1.xml")
+    add_custom_command(OUTPUT virtual-keyboard-client.h virtual-keyboard-protocol.c
+        COMMAND ${WAYLAND_SCANNER} client-header "${VIRTUAL_KEYBOARD_XML}" virtual-keyboard-client.h
+        COMMAND ${WAYLAND_SCANNER} private-code "${VIRTUAL_KEYBOARD_XML}" virtual-keyboard-protocol.c
+        DEPENDS "${VIRTUAL_KEYBOARD_XML}" VERBATIM)
+    enable_language(C)
+    add_executable(schnellertype_wayland_keyboard tests/linux_keyboard.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-protocol.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-client.h")
+    target_link_libraries(schnellertype_wayland_keyboard PRIVATE Qt6::Core PkgConfig::WAYLAND)
+    add_executable(schnellertype_qt_probe tests/linux_qt_probe.cpp)
+    target_link_libraries(schnellertype_qt_probe PRIVATE Qt6::Widgets)
+    add_executable(schnellertype_gtk_probe tests/linux_gtk_probe.cpp)
+    target_link_libraries(schnellertype_gtk_probe PRIVATE Qt6::Core PkgConfig::GTK3)
+    foreach(target schnellertype_qt_probe schnellertype_gtk_probe schnellertype_wayland_keyboard)
+        set_target_properties(${target} PROPERTIES AUTOMOC OFF)
+        target_compile_options(${target} PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    endforeach()
+endif()
+
 if(SCHNELLERTYPE_BUILD_TESTS)
     enable_testing()
     add_executable(schnellertype_tests tests/test_core.cpp)
@@ -486,6 +517,18 @@ if(SCHNELLERTYPE_BUILD_TESTS)
         target_compile_options(schnellertype_native_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
         set_target_properties(schnellertype_native_tests PROPERTIES AUTOMOC OFF)
         add_test(NAME native-settings COMMAND schnellertype_native_tests)
+    endif()
+    if(SCHNELLERTYPE_BUILD_FCITX5)
+        add_executable(schnellertype_fcitx5_tests tests/test_fcitx5.cpp)
+        add_dependencies(schnellertype_fcitx5_tests schnellerTyp-e-fcitx5)
+        target_link_libraries(schnellertype_fcitx5_tests PRIVATE schnellertype_native Fcitx5::Core)
+        target_compile_options(schnellertype_fcitx5_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
+        set_target_properties(schnellertype_fcitx5_tests PROPERTIES AUTOMOC OFF)
+        add_test(NAME fcitx5-composition COMMAND schnellertype_fcitx5_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/schnellerTyp-e-fcitx5.conf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/fcitx5/schnellerTyp-e.conf"
+            "$<TARGET_FILE_DIR:schnellerTyp-e-fcitx5>")
+        set_tests_properties(fcitx5-composition PROPERTIES TIMEOUT 30)
     endif()
 endif()
 

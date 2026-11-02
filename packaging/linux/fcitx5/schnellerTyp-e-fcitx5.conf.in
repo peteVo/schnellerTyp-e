@@ -5,4 +5,5 @@ Version=@PROJECT_VERSION@
 Library=schnellerTyp-e-fcitx5
 Type=SharedLibrary
 OnDemand=True
+Configurable=True
 

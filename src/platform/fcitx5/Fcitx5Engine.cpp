@@ -18,10 +18,11 @@
 namespace st::fcitx5 {
 namespace {
 
-bool sensitive(const fcitx::CapabilityFlags &flags)
+bool bypass(const fcitx::CapabilityFlags &flags)
 {
     return flags.test(fcitx::CapabilityFlag::Password)
-        || flags.test(fcitx::CapabilityFlag::Sensitive);
+        || flags.test(fcitx::CapabilityFlag::Sensitive)
+        || flags.test(fcitx::CapabilityFlag::Disable);
 }
 
 KeyEvent toCoreKey(const fcitx::KeyEvent &event)
@@ -89,14 +90,15 @@ Engine::Engine(fcitx::Instance *instance) : instance_(instance)
         fcitx::EventWatcherPhase::PreInputMethod,
         [this](fcitx::Event &baseEvent) {
             auto &event = static_cast<fcitx::FocusOutEvent &>(baseEvent);
-            finish(event.inputContext());
+            // Fcitx has already committed client preedit before this event.
+            discard(event.inputContext());
         });
     capabilityHandler_ = instance_->watchEvent(
         fcitx::EventType::InputContextCapabilityAboutToChange,
         fcitx::EventWatcherPhase::PreInputMethod,
         [this](fcitx::Event &baseEvent) {
             auto &event = static_cast<fcitx::CapabilityAboutToChangeEvent &>(baseEvent);
-            if (sensitive(event.newFlags()))
+            if (bypass(event.newFlags()))
                 discard(event.inputContext());
         });
     capabilityChangedHandler_ = instance_->watchEvent(
@@ -104,9 +106,33 @@ Engine::Engine(fcitx::Instance *instance) : instance_(instance)
         fcitx::EventWatcherPhase::PreInputMethod,
         [this](fcitx::Event &baseEvent) {
             auto &event = static_cast<fcitx::CapabilityChangedEvent &>(baseEvent);
-            if (sensitive(event.newFlags()))
+            if (bypass(event.newFlags()))
                 discard(event.inputContext());
         });
+}
+
+const fcitx::Configuration *Engine::getConfig() const
+{
+    config_.readSettings();
+    return &config_;
+}
+
+void Engine::setConfig(const fcitx::RawConfig &config)
+{
+    config_.readSettings();
+    config_.load(config, true);
+    config_.writeSettings();
+    instance_->inputContextManager().foreach([this](fcitx::InputContext *ic) {
+        auto *contextState = state(ic);
+        if (contextState && contextState->session) {
+            if (bypass(ic->capabilityFlags()))
+                discard(ic);
+            else
+                finish(ic);
+            contextState->session = std::make_unique<CompositionSession>(loadNativeEngine());
+        }
+        return true;
+    });
 }
 
 ContextState *Engine::state(fcitx::InputContext *ic) const
@@ -118,7 +144,9 @@ void Engine::showPreedit(fcitx::InputContext *ic, ContextState &contextState,
                          const std::u32string &text)
 {
     contextState.hasPreedit = true;
-    ic->inputPanel().setClientPreedit(fcitx::Text(unicode::toUtf8(text)));
+    fcitx::Text preedit(unicode::toUtf8(text));
+    preedit.setCursor(static_cast<int>(preedit.toString().size()));
+    ic->inputPanel().setClientPreedit(preedit);
     ic->updatePreedit();
     contextState.hasPreedit = !text.empty();
 }
@@ -140,9 +168,9 @@ void Engine::finish(fcitx::InputContext *ic) noexcept
             return;
 
         auto result = contextState->session->finish();
-        clearPreedit(ic, *contextState);
         if (result.commit && !result.text.empty())
             ic->commitString(unicode::toUtf8(result.text));
+        clearPreedit(ic, *contextState);
     } catch (...) {
         discard(ic);
     }
@@ -217,16 +245,18 @@ void Engine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &event)
         auto *contextState = state(ic);
         if (!contextState || !contextState->session)
             return;
-        if (sensitive(ic->capabilityFlags())) {
+        if (bypass(ic->capabilityFlags())) {
             discard(ic);
             return;
         }
 
         auto result = contextState->session->processKey(toCoreKey(event));
         if (result.commit) {
-            clearPreedit(ic, *contextState);
+            // Commit before clearing preedit: separate Wayland serial updates
+            // can otherwise invalidate the pending commit at fast typing rates.
             if (!result.text.empty())
                 ic->commitString(unicode::toUtf8(result.text));
+            clearPreedit(ic, *contextState);
         } else if (result.handled) {
             showPreedit(ic, *contextState, result.text);
         }

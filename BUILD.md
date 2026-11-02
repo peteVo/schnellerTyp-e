@@ -190,7 +190,38 @@ xcrun notarytool submit ... && xcrun stapler staple build/schnellerTyp-e.app
 
 ## Linux
 
-schnellerTyp-e needs an **X11 session**. See [Wayland](#wayland) below.
+Use the native Fcitx 5 adapter on Wayland, including Omarchy/Hyprland.
+The legacy desktop keyboard hook requires an **X11 session**.
+
+### Omarchy / native Fcitx 5
+
+Install the native build prerequisites from the official repositories:
+
+```bash
+omarchy pkg add gcc cmake ninja fcitx5 qt6-base
+cmake -S . -B build-native -G Ninja \
+  -DSCHNELLERTYPE_BUILD_APP=OFF -DSCHNELLERTYPE_BUILD_FCITX5=ON \
+  -DSCHNELLERTYPE_WERROR=ON -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build-native --parallel
+ctest --test-dir build-native --output-on-failure
+```
+
+This builds the native input method without libuiohook or Qt Quick. The tests
+include an isolated in-memory Fcitx client; they do not send keys to your
+desktop or change your input-method configuration.
+
+To inspect the installation before changing the system:
+
+```bash
+DESTDIR="$PWD/build-native/stage" cmake --install build-native
+```
+
+For installation, upgrades and rollback on Omarchy, use the
+[native Arch package](packaging/linux/fcitx5/README.md) rather than unmanaged
+file installation. It also documents the supported GTK/Chromium launch
+configuration and desktop verification. The raw `cmake --install` path remains
+available for other distributions. Do not add another autostart if Fcitx is
+already managed by your desktop.
 
 ### Arch Linux and CachyOS
 
@@ -283,16 +314,14 @@ cp packaging/linux/schnellerTyp-e.desktop ~/.config/autostart/
 
 ### Wayland
 
-Wayland has no global keyboard hook and no XTest equivalent. A compositor
-deliberately does not let one client read or synthesise another client's input,
-which is a security improvement and a hard wall for this design. schnellerTyp-e
-detects the session type, says so in the status pane, and refuses to pretend it
-is working.
+The native Fcitx 5 adapter composes text through the input-method framework
+instead of observing and replacing another application's keystrokes. Use the
+[native build above](#omarchy--native-fcitx-5) on Omarchy/Hyprland. Toolkit and
+application support determines whether Fcitx receives input in each field.
 
-The options are: log into an X11 session, or use a Wayland-native input method
-(ibus-bamboo and fcitx5-unikey both do Vietnamese well). A Wayland port of
-schnellerTyp-e would mean implementing the `input-method-unstable-v2` protocol,
-which is a different program rather than a different backend.
+The legacy libuiohook/XTest backend cannot process native Wayland applications.
+Its status pane reports this limitation. Running it alongside the native
+adapter can process input twice; use only one backend for a typing session.
 
 ### The X11 limitation worth knowing about
 
@@ -478,9 +507,10 @@ macro tools, some gaming overlays.
 rebuilt the app after granting it (see the rebuild trap above) or the focused
 field has Secure Event Input on.
 
-**Nothing happens on Linux.** Check the status pane: if it says Wayland, that is
-the answer. If it says X11 but the hook failed, the X server is missing the
-`XRecord` extension (`xdpyinfo | grep RECORD`).
+**Nothing happens on Linux.** On Wayland, use the native Fcitx 5 adapter and
+check that Fcitx is running with **schnellerTyp-e** selected. The legacy hook
+does not support native Wayland clients. On X11, if the hook failed, check for
+the X server's `XRecord` extension (`xdpyinfo | grep RECORD`).
 
 **Characters come out in the wrong case or the wrong letter** on a non-US
 physical keyboard: add a layout override, as above.
