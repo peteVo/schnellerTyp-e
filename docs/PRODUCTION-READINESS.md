@@ -67,7 +67,9 @@ nonzero. The baseline must report the addon unloaded. New reports are under
 - A coordinated physical-keyboard test passed in the actual Hyprland Qt
   scratch editor: mixed languages, Tab to an independent field, then literal
   password input. The operator typed all keys. Fcitx settings were restored.
-  Physical typing in Chromium and a longer ordinary-use session remain pending.
+  A second coordinated physical-keyboard check passed in a fresh Chromium
+  XWayland scratch profile, using the same three fields. No synthetic events
+  were sent in either manual run. A longer ordinary-use session remains pending.
 - Published v0.2.2 packages were downloaded from GitHub and matched SHA256SUMS.
   Real privileged pacman transactions in an isolated filesystem root passed:
   install 0.2.1-2, upgrade to 0.2.2-1, reinstall, rollback, upgrade again, remove.
@@ -83,7 +85,11 @@ nonzero. The baseline must report the addon unloaded. New reports are under
 The Linux CI job now executes the four supported desktop clients and both
 rapid XWayland password comparisons, using the runner's Google Chrome. It
 uploads synthetic results, launch context and logs, including on failure.
-Hosted runs still need to pass; configuring a workflow is not execution proof.
+The [hosted Linux job](https://github.com/peteVo/schnellerTyp-e/actions/runs/41712884506)
+passed the four-client runtime matrix, both rapid password comparisons and
+artifact upload on commit `4a8796f`. An earlier run failed because the harness
+assumed Arch library paths; the corrected harness reads CMake's install
+manifest and Fcitx's pkg-config library directory, and the Ubuntu run passed.
 
 Do not label native Chromium Wayland supported based on a slower passing run.
 The native GTK text-input-v3 path also remains experimental. Sensitive-field

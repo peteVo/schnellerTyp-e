@@ -112,3 +112,14 @@ interactive check; do not run it during normal typing.
 
 [Readiness audit and comparison results](../../../docs/PRODUCTION-READINESS.md)
 describe the current support boundary and pending login/reboot checks.
+
+For physical-keyboard verification, `python tools/verify-omarchy-installed.py
+build-native --manual` waits for the operator to type the displayed examples
+and sends no synthetic events. Add `--browser` to use a fresh Chromium
+XWayland scratch profile. Both modes restore Fcitx configuration afterward;
+coordinate an idle window before running them.
+
+`python tools/verify-arch-lifecycle.py --old OLD.pkg.tar.zst --new NEW.pkg.tar.zst`
+tests install, upgrade, reinstall, rollback and removal in a separate pacman
+root under the build directory. The tool requests privilege only for those
+isolated transactions; it does not change host packages.
