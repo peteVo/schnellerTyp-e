@@ -36,7 +36,7 @@ choose Automatic/German/Vietnamese, Telex/VNI, German rules and literal words.
 Fcitx's configured activation shortcut pauses/resumes the source. For the
 supported app launch configuration, set `GTK_IM_MODULE=fcitx` in the user
 environment (for example `~/.config/environment.d/20-schnellertype.conf`) and
-add `--gtk-version=4` to `~/.config/chromium-flags.conf`. Do not combine it
+set `--ozone-platform=x11 --gtk-version=4` in `~/.config/chromium-flags.conf`. Do not combine it
 with `--enable-wayland-ime`; the native protocol route remains experimental.
 Back up existing files, preserve unrelated flags, and start new app processes
 to apply the change. The current Omarchy installation was configured this way.
@@ -87,8 +87,9 @@ Password bypass depends on client reporting. In GTK 3, hiding a `GtkEntry` by
 itself can still advertise a free-form field; applications must set the
 password/PIN purpose or sensitivity hints. A field that hides text without
 reporting sensitivity cannot be identified reliably by this addon. Pause
-Fcitx for such applications. The supported Chromium route uses `GTK_IM_MODULE=fcitx --gtk-version=4`
-on Wayland and XWayland. The optional `--native-wayland-protocol` test mode
+Fcitx for such applications. The supported Chromium route uses `GTK_IM_MODULE=fcitx` with
+`--ozone-platform=x11 --gtk-version=4` on the Wayland desktop. Native Chromium
+Wayland reproduced password-input loss even with plain Fcitx and is experimental. The optional `--native-wayland-protocol` test mode
 exercises native text-input-v3, which failed rapid typing diagnostics and is
 not part of the supported configuration. Application/toolkit versions remain part of the
 compatibility contract.
@@ -108,3 +109,6 @@ window-targeted key dispatch, checks focus, and restores Fcitx configuration
 afterward. It requires Python GObject bindings and an idle keyboard while the
 scratch window is open. Unlike the private desktop matrix, this is an explicit
 interactive check; do not run it during normal typing.
+
+[Readiness audit and comparison results](../../../docs/PRODUCTION-READINESS.md)
+describe the current support boundary and pending login/reboot checks.

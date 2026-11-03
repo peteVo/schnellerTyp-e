@@ -58,6 +58,7 @@ int main()
         return 1;
     std::cout << "ready" << std::endl;
     const auto modifier = [&](const char *name) { return 1u << xkb_keymap_mod_get_index(keymap, name); };
+    int delayMs = 20;
     const auto send = [&](xkb_keysym_t symbol, bool ctrl, bool shift) {
         for (auto code = xkb_keymap_min_keycode(keymap); code <= xkb_keymap_max_keycode(keymap); ++code) {
             for (xkb_level_index_t level = 0; level < 2; ++level) {
@@ -73,7 +74,7 @@ int main()
                 zwp_virtual_keyboard_v1_key(keyboard, now + 1, code - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
                 zwp_virtual_keyboard_v1_modifiers(keyboard, 0, 0, 0, 0);
                 wl_display_flush(display);
-                QThread::msleep(20);
+                QThread::msleep(static_cast<unsigned long>(delayMs));
                 return true;
             }
         }
@@ -82,6 +83,11 @@ int main()
     std::string line;
     while (std::getline(std::cin, line)) {
         const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
+        delayMs = command.value("delayMs").toInt(20);
+        if (delayMs < 0 || delayMs > 1000) {
+            std::cout << "error" << std::endl;
+            continue;
+        }
         bool success = !command.isEmpty();
         if (command.contains("text")) {
             for (const auto value : command.value("text").toString().toUcs4())

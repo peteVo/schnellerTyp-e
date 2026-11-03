@@ -1,5 +1,10 @@
 # Verification
 
+See [the 3 November readiness audit](docs/PRODUCTION-READINESS.md) for the
+plain-Fcitx reproduction, validated Chromium XWayland workaround, physical
+keyboard check and published-package lifecycle tests. It narrows the earlier
+Chromium Wayland support claim below. Logout/reboot checks remain pending.
+
 ## Release v0.2.2 — 2 November 2026
 
 The v0.2.2 Arch package (`schnellertype-e-fcitx5-0.2.2-1-x86_64.pkg.tar.zst`)

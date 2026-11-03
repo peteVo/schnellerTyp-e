@@ -29,7 +29,7 @@ def wait_for(read, predicate=bool, timeout=15):
     raise RuntimeError(f"Timed out waiting for expected state; last observation: {last!r}")
 
 
-def session(build, output, native_protocol=False, clients=None, installed=False):
+def session(build, output, native_protocol=False, clients=None, installed=False, key_delay_ms=20, engine="addon", password_repeats=0, browser_command="chromium"):
     import websocket  # Development-only dependency, never part of the addon.
 
     processes = []
@@ -70,6 +70,11 @@ Layout=
 0=Default
 """)
 
+    if engine == "keyboard":
+        profile = fcitx_config / "profile"
+        profile.write_text(profile.read_text().replace("DefaultIM=schnellerTyp-e", "DefaultIM=keyboard-us")
+                           .replace("[Groups/0/Items/1]\nName=schnellerTyp-e\nLayout=\n", ""))
+
     def start(command, name):
         log = (output / f"{name}.log").open("w")
         logs.append(log)
@@ -84,6 +89,7 @@ Layout=
     keyboard = None
 
     def send(command):
+        command["delayMs"] = key_delay_ms
         keyboard.stdin.write(json.dumps(command) + "\n")
         keyboard.stdin.flush()
         if not select.select([keyboard.stdout], [], [], 20)[0] or keyboard.stdout.readline().strip() != "ok":
@@ -144,7 +150,7 @@ Layout=
             connection = None
             if browser:
                 profile = output / name
-                command = ["chromium", f"--user-data-dir={profile}", "--no-first-run",
+                command = [browser_command, f"--user-data-dir={profile}", "--no-first-run",
                            "--no-default-browser-check", "--disable-background-networking",
                            "--disable-sync", "--disable-extensions", "--password-store=basic",
                            "--host-resolver-rules=MAP * ~NOTFOUND",
@@ -182,65 +188,88 @@ Layout=
                     return json.loads(state_file.read_text())
             wait_for(state, lambda s: s and s.get("focus") == "normal")
             run("fcitx5-remote", "-o")
-            run("fcitx5-remote", "-s", "schnellerTyp-e")
-            wait_for(lambda: run("fcitx5-remote", "-n").strip(), lambda value: value == "schnellerTyp-e")
+            selected = "schnellerTyp-e" if engine == "addon" else "keyboard-us"
+            run("fcitx5-remote", "-s", selected)
+            wait_for(lambda: run("fcitx5-remote", "-n").strip(), lambda value: value == selected)
             wait_for(lambda: run("fcitx5-remote").strip(), lambda value: value == "2")
 
-            def check(label, field, expected):
+            def check(label, field, expected, literal=None):
+                if engine == "keyboard" and literal is not None:
+                    expected = literal
                 actual = wait_for(state, lambda s: s.get(field) == expected, timeout=3)
-                results.append({"client": name, "transport": "native-protocol" if native_protocol else "toolkit-module", "check": label, "field": field, "expected": expected,
+                results.append({"client": name, "engine": engine, "delay_ms": key_delay_ms, "transport": "native-protocol" if native_protocol else "toolkit-module", "check": label, "field": field, "expected": expected,
                                 "actual": actual[field], "passed": True})
                 print(f"PASS {name}: {label}", flush=True)
 
-            for label, raw, expected in [
-                ("mixed languages", "tooi ddeens Berlin und moechte coffee ", "tôi đến Berlin und möchte coffee "),
-                ("delayed Telex", "nuawx ", "nữa "),
-                ("literal undo", "ww ", "w "),
-                ("English and identifiers", "This is coffee test@example.com ", "This is coffee test@example.com "),
-            ]:
+            if password_repeats:
+                if not browser:
+                    raise RuntimeError("Password comparison requires a Chromium client")
+                for attempt in range(password_repeats):
+                    evaluate("for(const id of ['normal','second','password'])document.getElementById(id).value='';document.getElementById('normal').focus()")
+                    wait_for(state, lambda value: value["focus"] == "normal")
+                    type_text("hoom ")
+                    key("Tab")
+                    type_text("tooi ")
+                    key("Tab")
+                    wait_for(state, lambda value: value["focus"] == "password")
+                    expected = "hoom nuawx repeatedoo 12345"
+                    type_text(expected)
+                    actual = state()["password"]
+                    passed = actual == expected
+                    results.append({"client": name, "engine": engine, "delay_ms": key_delay_ms,
+                                    "check": "password transition", "attempt": attempt + 1,
+                                    "expected": expected, "actual": actual, "passed": passed})
+                    print(f"{'PASS' if passed else 'FAIL'} {name} {engine} {key_delay_ms}ms password {attempt + 1}: {actual!r}", flush=True)
+            else:
+                for label, raw, expected in [
+                    ("mixed languages", "tooi ddeens Berlin und moechte coffee ", "tôi đến Berlin und möchte coffee "),
+                    ("delayed Telex", "nuawx ", "nữa "),
+                    ("literal undo", "ww ", "w "),
+                    ("English and identifiers", "This is coffee test@example.com ", "This is coffee test@example.com "),
+                ]:
+                    clear()
+                    type_text(raw)
+                    check(label, "normal", expected, raw)
                 clear()
-                type_text(raw)
-                check(label, "normal", expected)
-            clear()
-            type_text("hoom")
-            key("Escape")
-            type_text(" ")
-            check("Escape restores literal input", "normal", "hoom ")
-            clear()
-            type_text("hoom")
-            key("BackSpace")
-            type_text("m ")
-            check("Backspace edits preedit", "normal", "hôm ")
-            clear()
-            type_text("hoom")
-            key("Return")
-            check("Enter commits once", "normal", "hôm")
-            clear()
-            type_text("hoom")
-            key("Tab")
-            check("focus loss commits once", "normal", "hôm")
-            type_text("tooi ")
-            check("second field is independent", "second", "tôi ")
-            key("Tab")
-            type_text("hoom nuawx")
-            check("password bypass", "password", "hoom nuawx")
-            send({"key": "Tab", "shift": True})
-            send({"key": "Tab", "shift": True})
-            time.sleep(0.2)
-            clear()
-            type_text("hoom ")
-            check("return from password field", "normal", "hôm ")
-            run("fcitx5-remote", "-c")
-            clear()
-            type_text("hoom ")
-            check("Fcitx pause", "normal", "hoom ")
-            run("fcitx5-remote", "-o")
-            clear()
-            type_text("hoom ")
-            check("Fcitx resume", "normal", "hôm ")
-            clear()
-            type_text("tooi ddeens Berlin und moechte coffee " * 20)
-            check("20-sentence typing", "normal", "tôi đến Berlin und möchte coffee " * 20)
+                type_text("hoom")
+                key("Escape")
+                type_text(" ")
+                check("Escape restores literal input", "normal", "hoom ")
+                clear()
+                type_text("hoom")
+                key("BackSpace")
+                type_text("m ")
+                check("Backspace edits preedit", "normal", "hôm ", "hoom ")
+                clear()
+                type_text("hoom")
+                key("Return")
+                check("Enter commits once", "normal", "hôm", "hoom")
+                clear()
+                type_text("hoom")
+                key("Tab")
+                check("focus loss commits once", "normal", "hôm", "hoom")
+                type_text("tooi ")
+                check("second field is independent", "second", "tôi ", "tooi ")
+                key("Tab")
+                type_text("hoom nuawx")
+                check("password bypass", "password", "hoom nuawx")
+                send({"key": "Tab", "shift": True})
+                send({"key": "Tab", "shift": True})
+                time.sleep(0.2)
+                clear()
+                type_text("hoom ")
+                check("return from password field", "normal", "hôm ", "hoom ")
+                run("fcitx5-remote", "-c")
+                clear()
+                type_text("hoom ")
+                check("Fcitx pause", "normal", "hoom ")
+                run("fcitx5-remote", "-o")
+                clear()
+                type_text("hoom ")
+                check("Fcitx resume", "normal", "hôm ", "hoom ")
+                clear()
+                type_text("tooi ddeens Berlin und moechte coffee " * 20)
+                check("20-sentence typing", "normal", "tôi đến Berlin und möchte coffee " * 20, "tooi ddeens Berlin und moechte coffee " * 20)
             if connection:
                 connection.close()
             run("swaymsg", "kill")
@@ -256,6 +285,11 @@ Layout=
         results.append({"passed": False, "error": str(error)})
         raise
     finally:
+        if (output / "fcitx5.log").exists():
+            loaded = "Loaded addon schnellerTyp-e-fcitx5" in (output / "fcitx5.log").read_text()
+            (output / "context.json").write_text(json.dumps({"engine": engine, "delay_ms": key_delay_ms,
+                "addon_loaded": loaded, "native_protocol": native_protocol,
+                "gtk_sync": env.get("FCITX_ENABLE_SYNC_MODE", "unset"), "browser": browser_command}, indent=2))
         (output / "results.json").write_text(json.dumps(results, indent=2, ensure_ascii=False))
         if env.get("SWAYSOCK"):
             subprocess.run(["swaymsg", "exit"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -274,24 +308,33 @@ Layout=
         except PermissionError:
             pass  # The private portal's FUSE mount disappears when its bus exits.
 
+    if any(not row["passed"] for row in results):
+        raise RuntimeError("Desktop verification failed; see results.json")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=Path("build-native"))
+    parser.add_argument("--browser", default="chromium", help="Chromium-compatible browser executable")
+    parser.add_argument("--key-delay-ms", type=int, choices=range(0, 1001), default=20, metavar="0..1000")
+    parser.add_argument("--engine", choices=["addon", "keyboard"], default="addon")
+    parser.add_argument("--password-repeats", type=int, default=0)
     parser.add_argument("--installed", action="store_true", help="Test the pacman-installed addon instead of staging the build")
     parser.add_argument("--clients", nargs="+", choices=["gtk-wayland", "qt-wayland", "qt-xwayland", "chromium-wayland", "chromium-xwayland"])
     parser.add_argument("--native-wayland-protocol", action="store_true",
                         help="Exercise the experimental native text-input protocol instead of toolkit modules")
     parser.add_argument("--session", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if not 0 <= args.password_repeats <= 100:
+        parser.error("password repetitions must be between 0 and 100")
     build = args.build_dir.resolve()
     if args.session:
         if (os.environ.get("SCHNELLERTYPE_TEST_OUTPUT") != str(args.session.resolve())
             or os.environ.get("DBUS_SESSION_BUS_ADDRESS") == os.environ.get("SCHNELLERTYPE_ORIGINAL_BUS")):
             parser.error("Internal session mode requires the harness's private D-Bus session")
-        session(build, args.session.resolve(), args.native_wayland_protocol, args.clients, args.installed)
+        session(build, args.session.resolve(), args.native_wayland_protocol, args.clients, args.installed, args.key_delay_ms, args.engine, args.password_repeats, args.browser)
         return
-    for command in ("sway", "swaymsg", "fcitx5", "fcitx5-remote", "chromium", "dbus-run-session"):
+    for command in ("sway", "swaymsg", "fcitx5", "fcitx5-remote", args.browser, "dbus-run-session"):
         if not shutil.which(command):
             parser.error(f"Missing development tool: {command}")
     for probe in ("schnellertype_qt_probe", "schnellertype_gtk_probe", "schnellertype_wayland_keyboard"):
@@ -306,7 +349,9 @@ def main():
                              "--build-dir", str(build), "--session", str(output),
                              *(["--native-wayland-protocol"] if args.native_wayland_protocol else []),
                              *(["--clients", *args.clients] if args.clients else []),
-                             *(["--installed"] if args.installed else [])],
+                             *(["--installed"] if args.installed else []),
+                             "--key-delay-ms", str(args.key_delay_ms), "--engine", args.engine,
+                             "--password-repeats", str(args.password_repeats), "--browser", args.browser],
                             env={**os.environ, "SCHNELLERTYPE_TEST_OUTPUT": str(output),
                                  "SCHNELLERTYPE_ORIGINAL_BUS": os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")})
     raise SystemExit(result.returncode)

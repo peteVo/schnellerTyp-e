@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """Bounded smoke test of the installed addon in a private Qt scratch window."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,11 @@ import sys
 import time
 from gi.repository import GLib
 
-build = Path(sys.argv[1] if len(sys.argv) > 1 else "build-native").resolve()
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("build_dir", nargs="?", type=Path, default=Path("build-native"))
+parser.add_argument("--manual", action="store_true", help="Wait for real keyboard input; send no synthetic keys")
+args = parser.parse_args()
+build = args.build_dir.resolve()
 state_path = build / "omarchy-scratch.json"
 results = []
 processes = []
@@ -63,7 +68,7 @@ try:
     env = {**os.environ, "QT_QPA_PLATFORM": "wayland", "QT_IM_MODULE": "fcitx"}
     log = (build / "omarchy-scratch.log").open("w")
     logs.append(log)
-    app = subprocess.Popen([str(build / "schnellertype_qt_probe"), str(state_path)],
+    app = subprocess.Popen([str(build / "schnellertype_qt_probe"), str(state_path), *(["--manual"] if args.manual else [])],
                            env=env, stdout=log, stderr=log)
     processes.append(app)
     wait(lambda: json.loads(run("hyprctl", "-j", "clients")),
@@ -96,16 +101,26 @@ try:
                         "actual": observed[field], "passed": True})
         print("PASS Omarchy installed addon:", label, flush=True)
 
-    send({"text": "tooi ddeens Berlin und moechte coffee "})
-    check("mixed-language typing", "normal", "tôi đến Berlin und möchte coffee ")
-    send({"text": "hoom"})
-    send({"key": "Tab"})
-    check("focus change commits once", "normal", "tôi đến Berlin und möchte coffee hôm")
-    send({"text": "tooi "})
-    check("independent second field", "second", "tôi ")
-    send({"key": "Tab"})
-    send({"text": "hoom nuawx"})
-    check("password bypass", "password", "hoom nuawx")
+    if args.manual:
+        print("MANUAL READY: type the displayed examples in the three fields; only use the synthetic password shown.", flush=True)
+        observed = wait(lambda: json.loads(state_path.read_text()),
+                        lambda value: value["normal"].strip() == "tôi đến Berlin und möchte coffee"
+                        and value["second"].strip() == "hôm" and value["password"] == "hoom nuawx", timeout=300)
+        results.append({"check": "physical keyboard across normal, second and password fields",
+                        "input": "manual", "passed": True, "actual": observed})
+        print("PASS physical keyboard verification", flush=True)
+    else:
+        send({"text": "tooi ddeens Berlin und moechte coffee "})
+        check("mixed-language typing", "normal", "tôi đến Berlin und möchte coffee ")
+        send({"text": "hoom"})
+        send({"key": "Tab"})
+        check("focus change commits once", "normal", "tôi đến Berlin und möchte coffee hôm")
+        send({"text": "tooi "})
+        check("independent second field", "second", "tôi ")
+        send({"key": "Tab"})
+        send({"text": "hoom nuawx"})
+        check("password bypass", "password", "hoom nuawx")
+
 except Exception as error:
     debug = GLib.Variant.parse(None, call("DebugInfo"), None, None).unpack()[0]
     print("\n".join(line for line in debug.splitlines() if "schnellertype" in line), flush=True)
@@ -135,4 +150,4 @@ finally:
                 process.wait()
         for log in logs:
             log.close()
-        (build / "omarchy-installed-verification.json").write_text(json.dumps(results, indent=2, ensure_ascii=False))
+        (build / ("omarchy-physical-verification.json" if args.manual else "omarchy-installed-verification.json")).write_text(json.dumps(results, indent=2, ensure_ascii=False))

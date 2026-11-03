@@ -12,7 +12,7 @@
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
-    if (argc != 2)
+    if (argc != 2 && argc != 3)
         return 1;
     app.setApplicationName(QStringLiteral("schnellertype-qt-probe"));
     QWidget window;
@@ -22,7 +22,13 @@ int main(int argc, char **argv)
     password.setEchoMode(QLineEdit::Password);
     for (auto *field : {&normal, &second, &password})
         layout.addWidget(field);
-    window.resize(600, 220);
+    if (argc == 3 && QString::fromLocal8Bit(argv[2]) == QStringLiteral("--manual")) {
+        window.setWindowTitle(QStringLiteral("Physical typing test — type each example, then Tab"));
+        normal.setPlaceholderText(QStringLiteral("Type: tooi ddeens Berlin und moechte coffee [Space, Tab]"));
+        second.setPlaceholderText(QStringLiteral("Type: hoom [Space, Tab]"));
+        password.setPlaceholderText(QStringLiteral("Synthetic password only: hoom nuawx"));
+    }
+    window.resize(760, 220);
     window.show();
     normal.setFocus();
     QTimer timer;
