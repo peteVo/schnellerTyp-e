@@ -8,17 +8,24 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tempfile
+import urllib.request
 from gi.repository import GLib
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("build_dir", nargs="?", type=Path, default=Path("build-native"))
 parser.add_argument("--manual", action="store_true", help="Wait for real keyboard input; send no synthetic keys")
+parser.add_argument("--browser", action="store_true", help="Use a fresh Chromium XWayland scratch window (manual only)")
 args = parser.parse_args()
+if args.browser and not args.manual:
+    parser.error("--browser requires --manual")
 build = args.build_dir.resolve()
 state_path = build / "omarchy-scratch.json"
 results = []
 processes = []
 logs = []
+connection = None
+read_state = lambda: json.loads(state_path.read_text())
 group = f"schnellerTyp-e verification {os.getpid()}"
 
 
@@ -65,15 +72,40 @@ try:
     call("AddInputMethodGroup", group)
     created = True
     call("SetInputMethodGroupInfo", group, "us", "[('keyboard-us', ''), ('schnellerTyp-e', '')]")
-    env = {**os.environ, "QT_QPA_PLATFORM": "wayland", "QT_IM_MODULE": "fcitx"}
+    env = {**os.environ, "QT_QPA_PLATFORM": "wayland", "QT_IM_MODULE": "fcitx", "GTK_IM_MODULE": "fcitx"}
     log = (build / "omarchy-scratch.log").open("w")
     logs.append(log)
-    app = subprocess.Popen([str(build / "schnellertype_qt_probe"), str(state_path), *(["--manual"] if args.manual else [])],
-                           env=env, stdout=log, stderr=log)
+    command = [str(build / "schnellertype_qt_probe"), str(state_path), *(["--manual"] if args.manual else [])]
+    if args.browser:
+        import websocket
+        profile = Path(tempfile.mkdtemp(prefix="physical-chromium-", dir=build))
+        page = profile / "scratch.html"
+        page.write_text('<!doctype html><meta charset="utf-8"><title>Physical typing verification</title><h1>Type each example, then Tab</h1><label>1. tooi ddeens Berlin und moechte coffee, then Space and Tab<input id="normal" autofocus></label><label>2. hoom, then Space and Tab<input id="second"></label><label>3. Synthetic password only: hoom nuawx<input id="password" type="password"></label><style>body{font:18px sans-serif;padding:24px}label,input{display:block;margin:20px;width:90%;font-size:20px}</style>')
+        command = ["chromium", "--ozone-platform=x11", "--gtk-version=4", f"--user-data-dir={profile}",
+                   "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
+                   "--disable-background-networking", "--disable-sync", "--disable-extensions",
+                   "--password-store=basic", "--host-resolver-rules=MAP * ~NOTFOUND", page.as_uri()]
+    app = subprocess.Popen(command, env=env, stdout=log, stderr=log)
     processes.append(app)
+    if args.browser:
+        port = wait(lambda: (profile / "DevToolsActivePort").read_text().splitlines()[0], bool)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        targets = wait(lambda: json.load(opener.open(f"http://127.0.0.1:{port}/json", timeout=2)), bool)
+        target = next(item for item in targets if item.get("type") == "page")
+        connection = websocket.create_connection(target["webSocketDebuggerUrl"], suppress_origin=True, timeout=5)
+        counter = 0
+        def read_state():
+            global counter
+            counter += 1
+            connection.send(json.dumps({"id": counter, "method": "Runtime.evaluate", "params": {
+                "expression": "Object.fromEntries(['normal','second','password'].map(id=>[id,document.getElementById(id).value]))", "returnByValue": True}}))
+            while True:
+                message = json.loads(connection.recv())
+                if message.get("id") == counter:
+                    return message["result"]["result"]["value"]
     wait(lambda: json.loads(run("hyprctl", "-j", "clients")),
          lambda windows: any(window.get("pid") == app.pid for window in windows))
-    wait(lambda: json.loads(state_path.read_text()), lambda s: s.get("focus") == "normal")
+    wait(read_state, lambda s: args.browser or s.get("focus") == "normal")
     run("hyprctl", "dispatch", f'hl.dsp.focus({{window = "pid:{app.pid}"}})')
     wait(lambda: json.loads(run("hyprctl", "-j", "activewindow")), lambda w: w.get("pid") == app.pid)
     call("SwitchInputMethodGroup", group)
@@ -96,18 +128,18 @@ try:
         time.sleep(0.2)
 
     def check(label, field, text):
-        observed = wait(lambda: json.loads(state_path.read_text()), lambda s: s.get(field) == text)
+        observed = wait(read_state, lambda s: s.get(field) == text)
         results.append({"check": label, "field": field, "expected": text,
                         "actual": observed[field], "passed": True})
         print("PASS Omarchy installed addon:", label, flush=True)
 
     if args.manual:
         print("MANUAL READY: type the displayed examples in the three fields; only use the synthetic password shown.", flush=True)
-        observed = wait(lambda: json.loads(state_path.read_text()),
+        observed = wait(read_state,
                         lambda value: value["normal"].strip() == "tôi đến Berlin und möchte coffee"
                         and value["second"].strip() == "hôm" and value["password"] == "hoom nuawx", timeout=300)
         results.append({"check": "physical keyboard across normal, second and password fields",
-                        "input": "manual", "passed": True, "actual": observed})
+                        "input": "manual", "client": "chromium-xwayland" if args.browser else "qt-wayland", "passed": True, "actual": observed})
         print("PASS physical keyboard verification", flush=True)
     else:
         send({"text": "tooi ddeens Berlin und moechte coffee "})
@@ -140,6 +172,8 @@ finally:
             call("SetConfig", "fcitx://config/global", "<" + original_config.print_(True) + ">")
         call("Save")
     finally:
+        if connection:
+            connection.close()
         for process in reversed(processes):
             if process.poll() is None:
                 process.terminate()
@@ -150,4 +184,4 @@ finally:
                 process.wait()
         for log in logs:
             log.close()
-        (build / ("omarchy-physical-verification.json" if args.manual else "omarchy-installed-verification.json")).write_text(json.dumps(results, indent=2, ensure_ascii=False))
+        (build / ("omarchy-browser-physical.json" if args.browser else "omarchy-physical-verification.json" if args.manual else "omarchy-installed-verification.json")).write_text(json.dumps(results, indent=2, ensure_ascii=False))

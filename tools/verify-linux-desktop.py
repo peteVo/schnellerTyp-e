@@ -37,14 +37,23 @@ def session(build, output, native_protocol=False, clients=None, installed=False,
     results = []
     runtime_directory = tempfile.TemporaryDirectory(prefix="st-desktop-", ignore_cleanup_errors=True)
     runtime = Path(runtime_directory.name)
+    libdir = Path(subprocess.check_output(["pkg-config", "--variable=libdir", "Fcitx5Core"], text=True).strip())
+    addon_dirs = str(libdir / "fcitx5")
+    data_dirs = "/usr/local/share:/usr/share"
+    if not installed:
+        manifest = (build / "install_manifest.txt").read_text().splitlines()
+        module = next(Path(line) for line in manifest if line.endswith("/schnellerTyp-e-fcitx5.so"))
+        descriptor = next(Path(line) for line in manifest if line.endswith("/fcitx5/addon/schnellerTyp-e-fcitx5.conf"))
+        addon_dirs = str(build / "stage" / module.parent.relative_to("/")) + ":" + addon_dirs
+        data_dirs = str(build / "stage" / descriptor.parents[2].relative_to("/")) + ":" + data_dirs
     env = os.environ.copy()
     for name in ("DISPLAY", "WAYLAND_DISPLAY", "SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE",
                  "FCITX_CONFIG_HOME", "FCITX_CONFIG_DIRS", "FCITX_DATA_HOME"):
         env.pop(name, None)
     env.update(XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(output / "config"),
                XDG_CACHE_HOME=str(output / "cache"), XDG_DATA_HOME=str(output / "data"),
-               XDG_DATA_DIRS="/usr/local/share:/usr/share" if installed else f"{build / 'stage/usr/share'}:/usr/local/share:/usr/share",
-               FCITX_ADDON_DIRS="/usr/lib/fcitx5" if installed else f"{build / 'stage/usr/lib/fcitx5'}:/usr/lib/fcitx5",
+               XDG_DATA_DIRS=data_dirs,
+               FCITX_ADDON_DIRS=addon_dirs,
                WLR_BACKENDS="headless", WLR_RENDERER="pixman", QT_IM_MODULE="fcitx",
                GTK_IM_MODULE="fcitx", XMODIFIERS="@im=fcitx", NO_AT_BRIDGE="1",
                XDG_CURRENT_DESKTOP="sway", QT_QPA_PLATFORMTHEME="", GTK_USE_PORTAL="0")
@@ -334,7 +343,7 @@ def main():
             parser.error("Internal session mode requires the harness's private D-Bus session")
         session(build, args.session.resolve(), args.native_wayland_protocol, args.clients, args.installed, args.key_delay_ms, args.engine, args.password_repeats, args.browser)
         return
-    for command in ("sway", "swaymsg", "fcitx5", "fcitx5-remote", args.browser, "dbus-run-session"):
+    for command in ("sway", "swaymsg", "fcitx5", "fcitx5-remote", args.browser, "dbus-run-session", "pkg-config"):
         if not shutil.which(command):
             parser.error(f"Missing development tool: {command}")
     for probe in ("schnellertype_qt_probe", "schnellertype_gtk_probe", "schnellertype_wayland_keyboard"):
