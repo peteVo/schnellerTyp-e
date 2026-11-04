@@ -24,7 +24,7 @@ jobs:
       - run: ctest --test-dir build --output-on-failure
       - run: python3 -m py_compile tools/verify-linux-desktop.py tools/verify-omarchy-installed.py
       - name: Install desktop verification dependencies
-        run: sudo apt-get install -y sway xwayland dbus-x11 python3-websocket qt6-wayland fcitx5 fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
+        run: sudo apt-get install -y sway xwayland wl-clipboard dbus-x11 python3-websocket qt6-wayland fcitx5 fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
       - name: Verify supported desktop clients
         run: python3 tools/verify-linux-desktop.py --build-dir build --browser google-chrome --clients gtk-wayland qt-wayland qt-xwayland chromium-xwayland
       - name: Compare rapid password input with addon enabled

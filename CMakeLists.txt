@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(schnellerTyp-e
-    VERSION 0.2.2
+    VERSION 0.3.0
     DESCRIPTION "Cross-platform input method editor and text transformation tool"
     LANGUAGES CXX
 )
@@ -407,14 +407,30 @@ if(SCHNELLERTYPE_BUILD_FCITX5)
         message(FATAL_ERROR "The Fcitx 5 input method requires Linux.")
     endif()
     find_package(Fcitx5Core REQUIRED)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets DBus)
+    add_library(schnellertype_setup_checks STATIC src/platform/fcitx5/SetupChecks.cpp)
+    target_link_libraries(schnellertype_setup_checks PUBLIC schnellertype_native Qt6::DBus)
+    target_compile_options(schnellertype_setup_checks PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    target_compile_definitions(schnellertype_setup_checks PRIVATE
+        SCHNELLERTYPE_VERSION="${PROJECT_VERSION}"
+        SCHNELLERTYPE_SYSTEM_LIBDIR="${FCITX_INSTALL_LIBDIR}")
+    set_target_properties(schnellertype_setup_checks PROPERTIES AUTOMOC OFF)
+    add_executable(schnellertype-setup src/platform/fcitx5/setup_main.cpp)
+    target_link_libraries(schnellertype-setup PRIVATE schnellertype_setup_checks Qt6::Widgets)
+    target_compile_definitions(schnellertype-setup PRIVATE SCHNELLERTYPE_VERSION="${PROJECT_VERSION}")
+    target_compile_options(schnellertype-setup PRIVATE ${SCHNELLERTYPE_WARNINGS})
+    set_target_properties(schnellertype-setup PROPERTIES AUTOMOC OFF)
     include(GNUInstallDirs)
     add_library(schnellerTyp-e-fcitx5 MODULE src/platform/fcitx5/Fcitx5Engine.cpp
         src/platform/fcitx5/Fcitx5Config.cpp)
     target_link_libraries(schnellerTyp-e-fcitx5 PRIVATE schnellertype_native Fcitx5::Core)
+    target_compile_definitions(schnellerTyp-e-fcitx5 PRIVATE QT_NO_FOREACH)
     target_compile_options(schnellerTyp-e-fcitx5 PRIVATE ${SCHNELLERTYPE_WARNINGS})
     set_target_properties(schnellerTyp-e-fcitx5 PROPERTIES AUTOMOC OFF PREFIX "")
     configure_file(packaging/linux/fcitx5/schnellerTyp-e-fcitx5.conf.in
                    schnellerTyp-e-fcitx5.conf @ONLY)
+    install(TARGETS schnellertype-setup RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES packaging/linux/fcitx5/schnellertype-setup.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
     install(TARGETS schnellerTyp-e-fcitx5 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/fcitx5)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/schnellerTyp-e-fcitx5.conf
             DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/addon)
@@ -473,10 +489,17 @@ if(SCHNELLERTYPE_BUILD_LINUX_DESKTOP_PROBES)
         COMMAND ${WAYLAND_SCANNER} client-header "${VIRTUAL_KEYBOARD_XML}" virtual-keyboard-client.h
         COMMAND ${WAYLAND_SCANNER} private-code "${VIRTUAL_KEYBOARD_XML}" virtual-keyboard-protocol.c
         DEPENDS "${VIRTUAL_KEYBOARD_XML}" VERBATIM)
+    set(VIRTUAL_POINTER_XML "${CMAKE_CURRENT_SOURCE_DIR}/tests/wlr-virtual-pointer-unstable-v1.xml")
+    add_custom_command(OUTPUT virtual-pointer-client.h virtual-pointer-protocol.c
+        COMMAND ${WAYLAND_SCANNER} client-header "${VIRTUAL_POINTER_XML}" virtual-pointer-client.h
+        COMMAND ${WAYLAND_SCANNER} private-code "${VIRTUAL_POINTER_XML}" virtual-pointer-protocol.c
+        DEPENDS "${VIRTUAL_POINTER_XML}" VERBATIM)
     enable_language(C)
     add_executable(schnellertype_wayland_keyboard tests/linux_keyboard.cpp
         "${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-protocol.c"
-        "${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-client.h")
+        "${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-client.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-protocol.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-client.h")
     target_link_libraries(schnellertype_wayland_keyboard PRIVATE Qt6::Core PkgConfig::WAYLAND)
     add_executable(schnellertype_qt_probe tests/linux_qt_probe.cpp)
     target_link_libraries(schnellertype_qt_probe PRIVATE Qt6::Widgets)
@@ -519,6 +542,12 @@ if(SCHNELLERTYPE_BUILD_TESTS)
         add_test(NAME native-settings COMMAND schnellertype_native_tests)
     endif()
     if(SCHNELLERTYPE_BUILD_FCITX5)
+        add_executable(schnellertype_setup_tests tests/test_setup.cpp)
+        target_link_libraries(schnellertype_setup_tests PRIVATE schnellertype_setup_checks)
+        target_compile_options(schnellertype_setup_tests PRIVATE ${SCHNELLERTYPE_WARNINGS})
+        set_target_properties(schnellertype_setup_tests PROPERTIES AUTOMOC OFF)
+        add_test(NAME setup-and-privacy COMMAND schnellertype_setup_tests)
+        set_tests_properties(setup-and-privacy PROPERTIES TIMEOUT 10)
         add_executable(schnellertype_fcitx5_tests tests/test_fcitx5.cpp)
         add_dependencies(schnellertype_fcitx5_tests schnellerTyp-e-fcitx5)
         target_link_libraries(schnellertype_fcitx5_tests PRIVATE schnellertype_native Fcitx5::Core)

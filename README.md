@@ -66,8 +66,13 @@ zip and its dependencies. tools/package-windows.ps1 is the MSVC packaging path.
 
 Optional native adapters use Fcitx 5 on Linux and InputMethodKit on macOS. They
 share the language engine and saved built-in preferences with the desktop app.
-The Fcitx addon provides its own standard Fcitx configuration dialog, so
-Omarchy users can configure built-in modes without building the legacy app.
+The Fcitx addon provides native status/menu controls and a standard Fcitx
+configuration dialog. **Status & Setup** checks the session and exports a
+diagnostic report without typed text, personal words, app IDs or paths.
+In Automatic mode, **Ctrl+Alt+L** keeps the current word literal and remembers
+its raw spelling. App preferences can choose a mode or literal input for an
+exact client ID. Unsupported saved JSON profiles pass through literally;
+choose a built-in mode to resume assistance.
 See the [native Arch package guide](packaging/linux/fcitx5/README.md) for
 installation, upgrades, rollback and the isolated desktop test harness.
 See [PLATFORMS.md](PLATFORMS.md) for build flags, installation and verification

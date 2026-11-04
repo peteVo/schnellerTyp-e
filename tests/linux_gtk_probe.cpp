@@ -10,6 +10,7 @@ struct State {
     GtkWidget *second;
     GtkWidget *password;
     const char *path;
+    GtkWidget *window;
 };
 
 int main(int argc, char **argv)
@@ -23,7 +24,7 @@ int main(int argc, char **argv)
     gtk_window_set_default_size(GTK_WINDOW(window), 600, 220);
     auto *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_container_add(GTK_CONTAINER(window), box);
-    State state{gtk_entry_new(), gtk_entry_new(), gtk_entry_new(), path};
+    State state{gtk_entry_new(), gtk_entry_new(), gtk_entry_new(), path, window};
     gtk_entry_set_visibility(GTK_ENTRY(state.password), FALSE);
     gtk_entry_set_input_purpose(GTK_ENTRY(state.password), GTK_INPUT_PURPOSE_PASSWORD);
     for (auto *field : {state.normal, state.second, state.password})
@@ -38,6 +39,12 @@ int main(int argc, char **argv)
                          {"password", text(s.password)},
                          {"focus", gtk_widget_has_focus(s.normal) ? "normal"
                              : gtk_widget_has_focus(s.second) ? "second" : "password"}};
+        int x = 0, y = 0;
+        gtk_widget_translate_coordinates(s.normal, s.window, 0, 0, &x, &y);
+        json.insert(QStringLiteral("normalRect"), QJsonObject{{"x", x}, {"y", y},
+                    {"width", gtk_widget_get_allocated_width(s.normal)},
+                    {"height", gtk_widget_get_allocated_height(s.normal)}});
+        json.insert(QStringLiteral("cursor"), gtk_editable_get_position(GTK_EDITABLE(s.normal)));
         QFile file(QString::fromLocal8Bit(s.path));
         if (file.open(QIODevice::WriteOnly))
             file.write(QJsonDocument(json).toJson(QJsonDocument::Compact));

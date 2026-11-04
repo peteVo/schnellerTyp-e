@@ -5,6 +5,40 @@ plain-Fcitx reproduction, validated Chromium XWayland workaround, physical
 keyboard check and published-package lifecycle tests. It narrows the earlier
 Chromium Wayland support claim below. Logout/reboot checks remain pending.
 
+## Development candidate 0.3.0 — 4 November 2026
+
+This candidate adds native Fcitx status/menu controls, Automatic-mode literal
+learning, exact app-ID preferences, explicit unsupported-profile passthrough,
+and a Qt Status & Setup companion with backed-up repairs and a restricted
+diagnostic export. It has not been published as a release.
+
+- All seven local CTest suites passed with warnings treated as errors:
+  65 Fcitx adapter checks, 17 shared-settings checks and 14 setup/privacy
+  checks, plus the existing engine/corpus/regression suites.
+- The expanded private desktop matrix passed 96 checks: GTK Wayland 21,
+  Qt Wayland 24, Qt XWayland 24 and Chromium XWayland 27. New cases cover
+  selection replacement, deletion undo/redo in Qt/Chromium, Unicode paste,
+  typing after paste, actual pointer placement during preedit, held keys,
+  Caps Lock, German-layout Unicode/AltGr, the real Ctrl+Alt+L learning
+  shortcut, and diagnostic export excluding a newly learned word.
+- Rapid Chromium XWayland password comparisons passed 15/15 transitions
+  each with the addon and plain Fcitx at 5 ms per character.
+- The normal and minimum-size setup windows were inspected offscreen. Native
+  Qt controls follow the system palette; no custom theme dependency was added.
+- The Arch candidate package built and ran all seven suites. Setup checks
+  were also read against the live session without altering it.
+- Isolated pacman install/upgrade/reinstall/rollback/upgrade/removal from
+  v0.2.2 to this candidate passed all six stages. Package ownership checks
+  reported 27 intact files and the synthetic preference sentinel survived.
+  As before, dependencies/scripts were skipped only in this empty test root.
+
+These checks use synthetic text in isolated sessions. Undo granularity is
+owned by the client; the undo/redo gate specifically verifies selection
+deletion of already composed text. The earlier physical-keyboard results
+below describe v0.2.2 and have not been repeated for this candidate. Login,
+reboot and longer ordinary-use checks remain pending. The Chromium native
+Wayland limitation remains unchanged.
+
 ## Release v0.2.2 — 2 November 2026
 
 The v0.2.2 Arch package (`schnellertype-e-fcitx5-0.2.2-1-x86_64.pkg.tar.zst`)

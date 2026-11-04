@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Test-only virtual keyboard. Uses evdev keycodes from the standard US layout.
+// Test-only virtual input for the private US/German-layout desktop harness.
 #include "virtual-keyboard-client.h"
+#include "virtual-pointer-client.h"
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 #include <QJsonDocument>
@@ -18,6 +19,7 @@
 struct Globals {
     wl_seat *seat = nullptr;
     zwp_virtual_keyboard_manager_v1 *manager = nullptr;
+    zwlr_virtual_pointer_manager_v1 *pointerManager = nullptr;
 };
 
 int main()
@@ -35,43 +37,61 @@ int main()
             if (std::strcmp(interface, "zwp_virtual_keyboard_manager_v1") == 0)
                 g.manager = static_cast<zwp_virtual_keyboard_manager_v1 *>(wl_registry_bind(
                     reg, name, &zwp_virtual_keyboard_manager_v1_interface, 1));
+            if (std::strcmp(interface, "zwlr_virtual_pointer_manager_v1") == 0)
+                g.pointerManager = static_cast<zwlr_virtual_pointer_manager_v1 *>(wl_registry_bind(
+                    reg, name, &zwlr_virtual_pointer_manager_v1_interface, 1));
         },
         [](void *, wl_registry *, uint32_t) {}};
     wl_registry_add_listener(registry, &listener, &globals);
-    if (wl_display_roundtrip(display) < 0 || !globals.seat || !globals.manager)
+    if (wl_display_roundtrip(display) < 0 || !globals.seat || !globals.manager || !globals.pointerManager)
         return 1;
     auto *keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(globals.manager, globals.seat);
+    auto *pointer = zwlr_virtual_pointer_manager_v1_create_virtual_pointer(globals.pointerManager, globals.seat);
     auto *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    const xkb_rule_names names{"evdev", "pc105", "us", "", ""};
-    auto *keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
-    if (!keymap)
-        return 1;
-    char *map = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
-    const auto size = std::strlen(map) + 1;
-    const int fd = memfd_create("schnellertype-test-keymap", MFD_CLOEXEC);
-    if (fd < 0 || write(fd, map, size) != static_cast<ssize_t>(size))
-        return 1;
-    zwp_virtual_keyboard_v1_keymap(keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, static_cast<uint32_t>(size));
-    close(fd);
-    free(map);
+    xkb_keymap *keymap = nullptr;
+    const auto setLayout = [&](const QByteArray& layout) {
+        const xkb_rule_names names{"evdev", "pc105", layout.constData(), "", ""};
+        auto *next = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+        if (!next) return false;
+        char *map = xkb_keymap_get_as_string(next, XKB_KEYMAP_FORMAT_TEXT_V1);
+        const auto size = std::strlen(map) + 1;
+        const int fd = memfd_create("schnellertype-test-keymap", MFD_CLOEXEC);
+        const bool written = fd >= 0 && write(fd, map, size) == static_cast<ssize_t>(size);
+        if (written)
+            zwp_virtual_keyboard_v1_keymap(keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, static_cast<uint32_t>(size));
+        if (fd >= 0) close(fd);
+        free(map);
+        if (!written) { xkb_keymap_unref(next); return false; }
+        xkb_keymap_unref(keymap);
+        keymap = next;
+        return true;
+    };
+    if (!setLayout("us")) return 1;
     if (wl_display_roundtrip(display) < 0)
         return 1;
     std::cout << "ready" << std::endl;
     const auto modifier = [&](const char *name) { return 1u << xkb_keymap_mod_get_index(keymap, name); };
-    int delayMs = 20;
-    const auto send = [&](xkb_keysym_t symbol, bool ctrl, bool shift) {
+    int delayMs = 20, holdMs = 0;
+    bool caps = false;
+    const auto send = [&](xkb_keysym_t symbol, bool ctrl, bool shift, bool alt) {
         for (auto code = xkb_keymap_min_keycode(keymap); code <= xkb_keymap_max_keycode(keymap); ++code) {
-            for (xkb_level_index_t level = 0; level < 2; ++level) {
+            for (xkb_level_index_t level = 0; level < 4; ++level) {
                 const xkb_keysym_t *symbols = nullptr;
                 if (xkb_keymap_key_get_syms_by_level(keymap, code, 0, level, &symbols) != 1 || symbols[0] != symbol)
                     continue;
                 const auto mods = (ctrl ? modifier(XKB_MOD_NAME_CTRL) : 0)
-                    | ((shift || level == 1) ? modifier(XKB_MOD_NAME_SHIFT) : 0);
-                zwp_virtual_keyboard_v1_modifiers(keyboard, mods, 0, 0, 0);
+                    | (alt ? modifier(XKB_MOD_NAME_ALT) : 0)
+                    | ((shift || (level & 1)) ? modifier(XKB_MOD_NAME_SHIFT) : 0)
+                    | (level >= 2 ? modifier("Mod5") : 0);
+                zwp_virtual_keyboard_v1_modifiers(keyboard, mods, 0, caps ? modifier(XKB_MOD_NAME_CAPS) : 0, 0);
                 const auto now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
                 zwp_virtual_keyboard_v1_key(keyboard, now, code - 8, WL_KEYBOARD_KEY_STATE_PRESSED);
-                zwp_virtual_keyboard_v1_key(keyboard, now + 1, code - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
+                if (holdMs) {
+                    wl_display_flush(display);
+                    QThread::msleep(static_cast<unsigned long>(holdMs));
+                }
+                zwp_virtual_keyboard_v1_key(keyboard, now + static_cast<uint32_t>(holdMs) + 1, code - 8, WL_KEYBOARD_KEY_STATE_RELEASED);
                 zwp_virtual_keyboard_v1_modifiers(keyboard, 0, 0, 0, 0);
                 wl_display_flush(display);
                 QThread::msleep(static_cast<unsigned long>(delayMs));
@@ -84,18 +104,37 @@ int main()
     while (std::getline(std::cin, line)) {
         const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
         delayMs = command.value("delayMs").toInt(20);
-        if (delayMs < 0 || delayMs > 1000) {
+        holdMs = command.value("holdMs").toInt(0);
+        caps = command.value("caps").toBool();
+        if (delayMs < 0 || delayMs > 1000 || holdMs < 0 || holdMs > 2000) {
             std::cout << "error" << std::endl;
             continue;
         }
         bool success = !command.isEmpty();
-        if (command.contains("text")) {
+        if (command.contains("click")) {
+            const auto point = command.value("click").toObject();
+            const int x = point.value("x").toInt(-1), y = point.value("y").toInt(-1);
+            success = x >= 0 && x < 1280 && y >= 0 && y < 800;
+            if (success) {
+                const auto now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+                zwlr_virtual_pointer_v1_motion_absolute(pointer, now, static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1280, 800);
+                zwlr_virtual_pointer_v1_frame(pointer);
+                zwlr_virtual_pointer_v1_button(pointer, now + 1, 272, WL_POINTER_BUTTON_STATE_PRESSED);
+                zwlr_virtual_pointer_v1_frame(pointer);
+                zwlr_virtual_pointer_v1_button(pointer, now + 2, 272, WL_POINTER_BUTTON_STATE_RELEASED);
+                zwlr_virtual_pointer_v1_frame(pointer);
+            }
+        } else if (command.contains("layout")) {
+            const auto layout = command.value("layout").toString().toUtf8();
+            success = (layout == "us" || layout == "de") && setLayout(layout);
+        } else if (command.contains("text")) {
             for (const auto value : command.value("text").toString().toUcs4())
-                success = send(xkb_utf32_to_keysym(value), false, false) && success;
+                success = send(xkb_utf32_to_keysym(value), false, false, false) && success;
         } else if (command.contains("key")) {
             success = send(xkb_keysym_from_name(command.value("key").toString().toUtf8().constData(),
                                                 XKB_KEYSYM_NO_FLAGS),
-                           command.value("ctrl").toBool(), command.value("shift").toBool()) && success;
+                           command.value("ctrl").toBool(), command.value("shift").toBool(), command.value("alt").toBool()) && success;
         } else {
             success = false;
         }
@@ -103,6 +142,7 @@ int main()
         std::cout << (success ? "ok" : "error") << std::endl;
     }
     zwp_virtual_keyboard_v1_destroy(keyboard);
+    zwlr_virtual_pointer_v1_destroy(pointer);
     wl_display_roundtrip(display);
     wl_display_disconnect(display);
     xkb_keymap_unref(keymap);

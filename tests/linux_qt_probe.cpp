@@ -36,6 +36,12 @@ int main(int argc, char **argv)
         QJsonObject state{{"normal", normal.text()}, {"second", second.text()},
                           {"password", password.text()},
                           {"focus", normal.hasFocus() ? "normal" : second.hasFocus() ? "second" : "password"}};
+        const auto position = normal.mapTo(&window, QPoint(0, 0));
+        state.insert(QStringLiteral("normalRect"), QJsonObject{{"x", position.x()}, {"y", position.y()},
+                     {"width", normal.width()}, {"height", normal.height()}});
+        state.insert(QStringLiteral("cursor"), normal.cursorPosition());
+        state.insert(QStringLiteral("undoAvailable"), normal.isUndoAvailable());
+        state.insert(QStringLiteral("redoAvailable"), normal.isRedoAvailable());
         QFile file(QString::fromLocal8Bit(argv[1]));
         if (file.open(QIODevice::WriteOnly))
             file.write(QJsonDocument(state).toJson(QJsonDocument::Compact));
