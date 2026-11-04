@@ -3,6 +3,8 @@
 
 #include <QDir>
 #include <QStandardPaths>
+#include <QRegularExpression>
+#include <QVariantMap>
 
 namespace st {
 namespace {
@@ -82,6 +84,65 @@ void Settings::setEngineOptions(const QString& engineId, const EngineOptions& op
     for (const auto& [key, value] : options)
         settings_.setValue(QString::fromStdString(key), QString::fromStdString(value));
     settings_.endGroup();
+}
+
+EngineOptions Settings::applicationModes() const
+{
+    EngineOptions result;
+    const auto values = settings_.value(QStringLiteral("applications/modes")).toMap();
+    for (auto it = values.cbegin(); it != values.cend(); ++it)
+        result[it.key().toStdString()] = it.value().toString().toStdString();
+    return result;
+}
+
+bool Settings::validateApplicationModes(const EngineOptions& modes)
+{
+    if (modes.size() > 128)
+        return false;
+    for (const auto& [program, mode] : modes) {
+        const auto name = QString::fromStdString(program);
+        if (name.isEmpty() || name.size() > 256 || name.contains(QRegularExpression(QStringLiteral("[\\s=;]")))
+            || (mode != "auto" && mode != "de" && mode != "vi" && mode != "literal"))
+            return false;
+    }
+    return true;
+}
+
+bool Settings::setApplicationModes(const EngineOptions& modes)
+{
+    if (!validateApplicationModes(modes))
+        return false;
+    QVariantMap values;
+    for (const auto& [name, mode] : modes)
+        values.insert(QString::fromStdString(name), QString::fromStdString(mode));
+    settings_.setValue(QStringLiteral("applications/modes"), values);
+    return true;
+}
+
+QString Settings::nativeLanguageId(const std::string& program) const
+{
+    const auto modes = applicationModes();
+    if (const auto it = modes.find(program); !program.empty() && it != modes.end())
+        return QString::fromStdString(it->second);
+    return languageId();
+}
+
+bool Settings::addLiteralWord(const QString& word)
+{
+    if (word.isEmpty() || word.size() > 256)
+        return false;
+    for (const auto c : word)
+        if (!c.isLetter())
+            return false;
+    auto options = engineOptions(QStringLiteral("auto"));
+    const auto value = QString::fromStdString(options["literalWords"]);
+    const auto words = value.split(QRegularExpression(QStringLiteral("[\\s,]+")), Qt::SkipEmptyParts);
+    if (!words.contains(word, Qt::CaseInsensitive)) {
+        options["literalWords"] = (value.isEmpty() ? word : value + QLatin1Char('\n') + word).toStdString();
+        setEngineOptions(QStringLiteral("auto"), options);
+    }
+    sync();
+    return settings_.status() == QSettings::NoError;
 }
 
 QString Settings::configDirectory()

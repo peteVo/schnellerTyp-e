@@ -7,6 +7,8 @@
 #include <fcitx/focusgroup.h>
 #include <fcitx/inputmethodentry.h>
 #include <fcitx/inputpanel.h>
+#include <fcitx/action.h>
+#include <fcitx/userinterfacemanager.h>
 
 #include "app/Settings.hpp"
 #include <QCoreApplication>
@@ -22,7 +24,7 @@
 // display, owning the session bus, or sending keys to desktop applications.
 class Client final : public fcitx::InputContext {
 public:
-    explicit Client(fcitx::InputContextManager &manager) : InputContext(manager)
+    explicit Client(fcitx::InputContextManager &manager, const std::string& program = {}) : InputContext(manager, program)
     {
         setCapabilityFlags(fcitx::CapabilityFlag::Preedit);
         created();
@@ -224,9 +226,101 @@ int main(int argc, char **argv)
     update.setValueByPath("Mode", "invalid");
     engine.setConfig(update);
     check("invalid mode keeps prior selection", st::Settings().languageId() == QStringLiteral("auto"));
+    update.setValueByPath("Mode", "Automatic");
     update.setValueByPath("Enabled", "False");
     engine.setConfig(update);
     check("native disable takes effect immediately", !key(client, fcitx::Key(FcitxKey_a)));
+
+    auto* status = instance.userInterfaceManager().lookupAction("schnellertype-status");
+    auto* pause = instance.userInterfaceManager().lookupAction("schnellertype-enabled");
+    auto* learn = instance.userInterfaceManager().lookupAction("schnellertype-learn-literal");
+    check("native actions registered", status && pause && learn
+          && instance.userInterfaceManager().lookupAction("schnellertype-setup"));
+    if (!status || !pause || !learn) return 1;
+    check("paused state visible", status->shortText(&client) == "Paused");
+    pause->activate(&client);
+    check("native enable action persists", st::Settings().enabled()
+          && status->shortText(&client) == "Active — Automatic");
+    update = fcitx::RawConfig();
+    update.setValueByPath("LiteralWords", "");
+    engine.setConfig(update);
+    reset(client);
+    type(client, "hoom");
+    check("learn shortcut consumes only active word", key(client, fcitx::Key(FcitxKey_l,
+          fcitx::KeyStates(fcitx::KeyState::Ctrl) | fcitx::KeyState::Alt)));
+    check("learn restores raw word once", client.committed == "hoom" && client.preedit.empty());
+    check("learn persists raw spelling", st::Settings().engineOptions(QStringLiteral("auto")).at("literalWords") == "hoom");
+    key(client, fcitx::Key(FcitxKey_space));
+    type(client, "hoom ");
+    check("learned spelling survives next word", client.committed == "hoom hoom ");
+    reset(client);
+    type(client, "tooi");
+    learn->activate(&client);
+    check("native learn action uses same path", client.committed == "tooi" && client.preedit.empty());
+    const auto literals = st::Settings().engineOptions(QStringLiteral("auto")).at("literalWords");
+    client.setCapabilityFlags(fcitx::CapabilityFlags(fcitx::CapabilityFlag::Preedit) | fcitx::CapabilityFlag::Password);
+    type(client, "secret");
+    learn->activate(&client);
+    check("sensitive words cannot be learned", st::Settings().engineOptions(QStringLiteral("auto")).at("literalWords") == literals);
+    check("sensitive status visible", status->shortText(&client).find("Sensitive") == 0);
+    client.setCapabilityFlags(fcitx::CapabilityFlag::Preedit);
+
+    reset(client);
+    type(client, "test@example.com");
+    learn->activate(&client);
+    check("address-like input cannot be learned", st::Settings().engineOptions(QStringLiteral("auto")).at("literalWords") == literals);
+    reset(client);
+
+    Client editor(instance.inputContextManager(), "test.editor");
+    Client chat(instance.inputContextManager(), "test.chat");
+    update.setValueByPath("ApplicationModes", "test.editor=literal; test.chat=de");
+    engine.setConfig(update);
+    activate(editor);
+    activate(chat);
+    check("app ID visible locally for exact preferences", status->longText(&editor).find("test.editor") != std::string::npos);
+    check("literal app passes keys through", !key(editor, fcitx::Key(FcitxKey_h))
+          && editor.preedit.empty() && status->shortText(&editor) == "Literal for this application");
+    type(chat, "moechte ");
+    check("app-specific German mode", chat.committed == "möchte "
+          && status->shortText(&chat) == "Active — German");
+    update.setValueByPath("ApplicationModes", "test.editor=de; test.editor=literal");
+    engine.setConfig(update);
+    auto modes = st::Settings().applicationModes();
+    check("duplicate app preference rejected without losing saved map", modes.contains("test.editor") && modes.at("test.editor") == "literal");
+    update.setValueByPath("ApplicationModes", "test.editor=custom");
+    engine.setConfig(update);
+    modes = st::Settings().applicationModes();
+    check("unsupported app mode rejected", modes.contains("test.editor") && modes.at("test.editor") == "literal");
+    settings.setLanguageId(QStringLiteral("custom-profile"));
+    settings.sync();
+    activate(client);
+    check("unsupported global profile visible and literal", !key(client, fcitx::Key(FcitxKey_h))
+          && status->shortText(&client).find("Unsupported saved profile") == 0);
+    update = fcitx::RawConfig();
+    update.setValueByPath("Enabled", "True");
+    engine.setConfig(update);
+    check("unrelated config edit preserves custom profile", st::Settings().languageId() == QStringLiteral("custom-profile"));
+    update.setValueByPath("Mode", "invalid");
+    engine.setConfig(update);
+    check("invalid mode preserves nondefault profile", st::Settings().languageId() == QStringLiteral("custom-profile"));
+    update.setValueByPath("Mode", "Automatic");
+    update.setValueByPath("LiteralWords", "");
+    engine.setConfig(update);
+    reset(client);
+    type(client, "hoom");
+    check("AltGr modifier does not finish composition", !key(client, fcitx::Key(FcitxKey_ISO_Level3_Shift)) && client.preedit == "hôm");
+    key(client, fcitx::Key(FcitxKey_EuroSign, fcitx::KeyState::Mod5));
+    key(client, fcitx::Key(FcitxKey_space));
+    check("AltGr printable symbol survives", client.committed.find("€") != std::string::npos);
+    reset(client);
+    key(client, fcitx::Key(FcitxKey_udiaeresis));
+    key(client, fcitx::Key(FcitxKey_space));
+    check("non-US Unicode key survives", client.committed == "ü ");
+    reset(client);
+    for (const auto sym : {FcitxKey_X, FcitxKey_Y, FcitxKey_Z})
+        key(client, fcitx::Key(sym, fcitx::KeyState::CapsLock));
+    key(client, fcitx::Key(FcitxKey_space));
+    check("Caps Lock symbols retain case", client.committed == "XYZ ");
 
     std::printf("%d Fcitx adapter checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

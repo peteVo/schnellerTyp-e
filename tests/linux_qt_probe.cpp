@@ -12,7 +12,7 @@
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
-    if (argc != 2)
+    if (argc != 2 && argc != 3)
         return 1;
     app.setApplicationName(QStringLiteral("schnellertype-qt-probe"));
     QWidget window;
@@ -22,7 +22,13 @@ int main(int argc, char **argv)
     password.setEchoMode(QLineEdit::Password);
     for (auto *field : {&normal, &second, &password})
         layout.addWidget(field);
-    window.resize(600, 220);
+    if (argc == 3 && QString::fromLocal8Bit(argv[2]) == QStringLiteral("--manual")) {
+        window.setWindowTitle(QStringLiteral("Physical typing test — type each example, then Tab"));
+        normal.setPlaceholderText(QStringLiteral("Type: tooi ddeens Berlin und moechte coffee [Space, Tab]"));
+        second.setPlaceholderText(QStringLiteral("Type: hoom [Space, Tab]"));
+        password.setPlaceholderText(QStringLiteral("Synthetic password only: hoom nuawx"));
+    }
+    window.resize(760, 220);
     window.show();
     normal.setFocus();
     QTimer timer;
@@ -30,6 +36,12 @@ int main(int argc, char **argv)
         QJsonObject state{{"normal", normal.text()}, {"second", second.text()},
                           {"password", password.text()},
                           {"focus", normal.hasFocus() ? "normal" : second.hasFocus() ? "second" : "password"}};
+        const auto position = normal.mapTo(&window, QPoint(0, 0));
+        state.insert(QStringLiteral("normalRect"), QJsonObject{{"x", position.x()}, {"y", position.y()},
+                     {"width", normal.width()}, {"height", normal.height()}});
+        state.insert(QStringLiteral("cursor"), normal.cursorPosition());
+        state.insert(QStringLiteral("undoAvailable"), normal.isUndoAvailable());
+        state.insert(QStringLiteral("redoAvailable"), normal.isRedoAvailable());
         QFile file(QString::fromLocal8Bit(argv[1]));
         if (file.open(QIODevice::WriteOnly))
             file.write(QJsonDocument(state).toJson(QJsonDocument::Compact));

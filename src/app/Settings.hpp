@@ -35,6 +35,13 @@ public:
     [[nodiscard]] EngineOptions engineOptions(const QString& engineId) const;
     void setEngineOptions(const QString& engineId, const EngineOptions& options);
 
+    /// Exact client program IDs map to auto/de/vi/literal. Invalid maps are rejected.
+    [[nodiscard]] EngineOptions applicationModes() const;
+    static bool validateApplicationModes(const EngineOptions& modes);
+    bool setApplicationModes(const EngineOptions& modes);
+    [[nodiscard]] QString nativeLanguageId(const std::string& program = {}) const;
+    bool addLiteralWord(const QString& word);
+
     /// Directory holding custom rule files, layout overrides and the German
     /// exception list. Created on first use.
     [[nodiscard]] static QString configDirectory();

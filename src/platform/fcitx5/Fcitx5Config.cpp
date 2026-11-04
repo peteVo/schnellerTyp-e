@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "Fcitx5Config.hpp"
 #include "app/Settings.hpp"
+#include <QStringList>
+#include <QRegularExpression>
 
 namespace st::fcitx5 {
 namespace {
@@ -12,13 +14,34 @@ bool option(const EngineOptions &options, const char *key, bool fallback)
 }
 }
 
+std::optional<EngineOptions> parseApplicationModes(const std::string& text)
+{
+    if (text.size() > 65536)
+        return std::nullopt;
+    EngineOptions result;
+    for (const auto& line : QString::fromStdString(text).split(QRegularExpression(QStringLiteral("[;\n]")), Qt::SkipEmptyParts)) {
+        if (line.trimmed().isEmpty())
+            continue;
+        const auto parts = line.split(QLatin1Char('='));
+        if (parts.size() != 2 || !result.emplace(parts[0].trimmed().toStdString(), parts[1].trimmed().toStdString()).second)
+            return std::nullopt;
+    }
+    if (!Settings::validateApplicationModes(result))
+        return std::nullopt;
+    return result;
+}
+
 void Config::readSettings()
 {
     Settings settings;
     enabled.setValue(settings.enabled());
     const auto id = settings.languageId();
     mode.setValue(id == QStringLiteral("de") ? Mode::German
-                  : id == QStringLiteral("vi") ? Mode::Vietnamese : Mode::Automatic);
+                  : id == QStringLiteral("vi") ? Mode::Vietnamese : id == QStringLiteral("auto") ? Mode::Automatic : Mode::Unsupported);
+    QStringList apps;
+    for (const auto& [program, modeId] : settings.applicationModes())
+        apps.append(QString::fromStdString(program + "=" + modeId));
+    applicationModes.setValue(apps.join(QStringLiteral("; ")).toStdString());
     const auto vi = settings.engineOptions(QStringLiteral("vi"));
     const auto de = settings.engineOptions(QStringLiteral("de"));
     const auto automatic = settings.engineOptions(QStringLiteral("auto"));
@@ -40,8 +63,11 @@ void Config::writeSettings() const
 {
     Settings settings;
     settings.setEnabled(*enabled);
-    settings.setLanguageId(*mode == Mode::German ? QStringLiteral("de")
+    if (*mode != Mode::Unsupported)
+        settings.setLanguageId(*mode == Mode::German ? QStringLiteral("de")
                            : *mode == Mode::Vietnamese ? QStringLiteral("vi") : QStringLiteral("auto"));
+    if (const auto parsed = parseApplicationModes(*applicationModes))
+        settings.setApplicationModes(*parsed);
     settings.setEngineOptions(QStringLiteral("vi"), {
         {"method", *method == Method::VNI ? "vni" : "telex"},
         {"modernTone", boolean(*modernTone)}, {"spellCheck", boolean(*spellCheck)},

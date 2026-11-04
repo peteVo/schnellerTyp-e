@@ -11,19 +11,17 @@
 
 namespace st {
 
-EnginePtr loadNativeEngine()
+EnginePtr loadNativeEngine(const std::string& program)
 {
     Settings settings;
     if (!settings.enabled())
         return nullptr;
     auto& registry = RuleEngineRegistry::instance();
     registry.registerBuiltins();
-    auto id = settings.languageId();
+    auto id = settings.nativeLanguageId(program);
+    if (id != QStringLiteral("auto") && id != QStringLiteral("de") && id != QStringLiteral("vi"))
+        return nullptr;
     auto engine = registry.create(id.toStdString());
-    if (!engine) {
-        id = QStringLiteral("auto");
-        engine = registry.create("auto");
-    }
 
     auto german = GermanRuleEngine::builtinExceptions();
     // Fcitx is the process host, so QStandardPaths::AppConfigLocation would

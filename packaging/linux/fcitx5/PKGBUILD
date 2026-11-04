@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Local working-tree package: cd packaging/linux/fcitx5 && makepkg -f
 pkgname=schnellertype-e-fcitx5
-pkgver=0.2.2
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Offline English, Vietnamese and German typing assistant for Fcitx 5'
 arch=('x86_64' 'aarch64')

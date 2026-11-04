@@ -29,7 +29,9 @@ int main(int argc, char** argv)
     }
 
     int failures = 0;
+    int checks = 0;
     const auto check = [&](const char* name, bool condition) {
+        ++checks;
         if (!condition) {
             std::printf("FAIL %s\n", name);
             ++failures;
@@ -65,7 +67,25 @@ int main(int argc, char** argv)
 
     settings.setLanguageId(QStringLiteral("missing"));
     settings.sync();
-    check("unknown mode recovers", st::loadNativeEngine()->id() == "auto");
-    std::printf("6 native settings checks, %d failures\n", failures);
+    check("unsupported profile passes through literally", !st::loadNativeEngine());
+    check("app preference saves", settings.setApplicationModes({{"editor", "literal"}, {"chat", "de"}}));
+    settings.sync();
+    check("literal app bypasses unsupported global profile", !st::loadNativeEngine("editor"));
+    check("built-in app override works with unsupported global profile", st::loadNativeEngine("chat")->id() == "de");
+    check("unknown app does not silently choose Automatic", !st::loadNativeEngine("other"));
+    check("invalid app mode rejected", !settings.setApplicationModes({{"editor", "custom"}}));
+    check("invalid app ID rejected", !settings.setApplicationModes({{"bad name", "auto"}}));
+    check("rejected map preserves preferences", settings.applicationModes().at("editor") == "literal");
+    settings.setLanguageId(QStringLiteral("auto"));
+    settings.setEngineOptions(QStringLiteral("auto"), {{"literalWords", ""}});
+    check("literal word saves", settings.addLiteralWord(QStringLiteral("hoom")));
+    check("case-insensitive learning is idempotent", settings.addLiteralWord(QStringLiteral("HOOM"))
+          && settings.engineOptions(QStringLiteral("auto")).at("literalWords") == "hoom");
+    check("phrases and addresses cannot be learned", !settings.addLiteralWord(QStringLiteral("two words"))
+          && !settings.addLiteralWord(QStringLiteral("test@example.com")));
+    st::CompositionSession learned(st::loadNativeEngine());
+    for (const auto c : U"hoom") if (c) (void)learned.processKey(st::KeyEvent::character_(c));
+    check("learned word is literal after reload", learned.finish().text == U"hoom");
+    std::printf("%d native settings checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

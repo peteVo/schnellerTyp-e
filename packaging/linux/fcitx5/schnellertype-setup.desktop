@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=schnellerTyp-e Status & Setup
+Comment=Check typing assistance, repair setup files and export private diagnostics
+Exec=schnellertype-setup
+Icon=input-keyboard
+Terminal=false
+Categories=Settings;Utility;
+Keywords=Fcitx;Typing;Vietnamese;German;Diagnostics;

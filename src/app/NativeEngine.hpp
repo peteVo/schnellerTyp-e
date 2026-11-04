@@ -7,6 +7,6 @@ namespace st {
 
 /// Load the same saved preferences as the desktop settings panel. Native hosts
 /// call this on activation so an engine never performs disk I/O while typing.
-EnginePtr loadNativeEngine();
+EnginePtr loadNativeEngine(const std::string& program = {});
 
 } // namespace st
