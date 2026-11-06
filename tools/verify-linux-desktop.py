@@ -194,8 +194,7 @@ Layout=
                     return cdp("Runtime.evaluate", {"expression": expression, "returnByValue": True})["result"].get("value")
 
                 def state():
-                    return evaluate("Object.fromEntries(['normal','second','password'].map(id=>[id,document.getElementById(id).value]).concat([['focus',document.activeElement.id],['cursor',document.getElementById('normal').selectionStart],['normalPreedit',window.testPreedit||'']]))")
-                evaluate("window.testPreedit='';for(const type of ['compositionstart','compositionupdate','compositionend'])document.getElementById('normal').addEventListener(type,e=>window.testPreedit=type==='compositionend'?'':e.data)")
+                    return evaluate("Object.fromEntries(['normal','second','password'].map(id=>[id,document.getElementById(id).value]).concat([['focus',document.activeElement.id],['cursor',document.getElementById('normal').selectionStart]]))")
                 evaluate("document.getElementById('normal').focus()")
             else:
                 def state():
@@ -246,30 +245,33 @@ Layout=
                     type_text(raw)
                     check(label, "normal", expected, raw)
                 if engine == "addon":
+                    # Browser versions expose IME updates differently to DOM
+                    # composition events; value is the observable live outcome.
+                    live_field = "normal" if browser else "normalPreedit"
                     clear()
                     type_text("nosf")
-                    check("live tone replacement", "normalPreedit", "nò")
+                    check("live tone replacement", live_field, "nò")
                     send({"key": "z", "ctrl": True, "alt": True})
-                    check("undo current tone edit before Space", "normalPreedit", "nó")
+                    check("undo current tone edit before Space", live_field, "nó")
                     type_text("z")
-                    check("remove current tone before Space", "normalPreedit", "no")
+                    check("remove current tone before Space", live_field, "no")
                     type_text(" ")
                     check("corrected tone commits once", "normal", "no ")
                     clear()
                     type_text("as")
                     send({"key": "v", "ctrl": True, "alt": True})
-                    check("force Vietnamese without Space", "normalPreedit", "á")
+                    check("force Vietnamese without Space", live_field, "á")
                     send({"key": "z", "ctrl": True, "alt": True})
-                    check("undo temporary mode override", "normalPreedit", "as")
+                    check("undo temporary mode override", live_field, "as")
                     type_text(" ")
                     check("word override does not learn a preference", "normal", "as ")
                     clear()
                     type_text("hoom")
                     key("Left")
                     key("BackSpace")
-                    check("edit inside unfinished word", "normalPreedit", "hm")
+                    check("edit inside unfinished word", live_field, "hm")
                     send({"key": "z", "ctrl": True, "alt": True})
-                    check("undo edit inside unfinished word", "normalPreedit", "hôm")
+                    check("undo edit inside unfinished word", live_field, "hôm")
                     key("End")
                     type_text(" ")
                     check("caret-edited word commits once", "normal", "hôm ")
