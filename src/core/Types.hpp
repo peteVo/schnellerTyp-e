@@ -23,6 +23,8 @@ enum class KeyKind : std::uint8_t {
     Space,
     Escape,
     Navigation,  ///< Arrows, Home/End, PgUp/PgDn — caret moved, word context lost.
+    Left, Right, Home, End, Delete, ///< Native composition caret editing.
+    ForceVietnamese, UndoComposition, ///< Commands scoped to the current word.
     Modifier,    ///< Shift/Ctrl/Alt/Meta pressed alone.
     Other        ///< Function keys, media keys, anything we do not model.
 };
@@ -37,9 +39,10 @@ struct KeyEvent {
     bool alt   = false;
     bool shift = false;
     bool meta  = false;
+    bool altGr = false; ///< Right Alt must not trigger composition shortcuts.
 
     /// True when a command-style chord is held (Ctrl+C, Cmd+V, Alt+Tab …).
-    /// Rule engines must never transform these; they belong to the focused app.
+    /// These belong to the focused app unless an active composition explicitly handles them.
     [[nodiscard]] constexpr bool isChord() const noexcept { return ctrl || alt || meta; }
 
     static KeyEvent character_(char32_t c, bool shift = false) noexcept
@@ -59,6 +62,19 @@ struct KeyEvent {
     }
 };
 
+/// Shared shortcuts; adapters only supply logical keys and modifier state.
+[[nodiscard]] inline KeyEvent compositionKey(KeyEvent key) noexcept
+{
+    if (key.kind == KeyKind::Character && key.ctrl && key.alt && !key.shift
+        && !key.meta && !key.altGr) {
+        if (key.character == U'v' || key.character == U'V')
+            key.kind = KeyKind::ForceVietnamese;
+        else if (key.character == U'z' || key.character == U'Z')
+            key.kind = KeyKind::UndoComposition;
+    }
+    return key;
+}
+
 /// What the engine wants the hook layer to do about a keystroke.
 ///
 /// The contract is deliberately narrow: "delete `backspaces` characters that are
@@ -71,6 +87,7 @@ struct EngineResult {
     bool           handled    = false;
     int            backspaces = 0;
     std::u32string text;
+    int cursor = -1; ///< Optional codepoint offset for native preedit; -1 means end.
 
     [[nodiscard]] static EngineResult passthrough() noexcept { return {}; }
 

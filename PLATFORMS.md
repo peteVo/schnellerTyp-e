@@ -7,17 +7,39 @@ word of language context. It is a conservative statistical heuristic, not a
 guarantee of detecting the intention behind every ambiguous key sequence.
 
 The optional native adapters reuse the same engine through `CompositionSession`:
-edits affect an owned preedit buffer and Space commits it. Enter, Tab, navigation
-and command shortcuts commit pending text before being forwarded. Native hosts
+edits affect an owned preedit buffer. In Automatic mode, plain Left/Right/Home/End
+move within that buffer and Backspace/Delete edit at the caret. Space and
+punctuation commit it; Enter, Tab, broader navigation and ordinary command
+shortcuts commit pending text before being forwarded. Ctrl+Alt+V temporarily
+forces Vietnamese for the current word; Ctrl+Alt+Z undoes a current-word edit.
+Native hosts
 reload saved built-in mode and language preferences when activated. A saved
-custom JSON mode currently falls back to Automatic in the native adapters.
+custom JSON mode passes through literally in the native adapters.
 Disable the desktop keyboard hook when using a native input source so there
 is only one processor of your keystrokes.
+
+## Shared behavior and Windows adaptation
+
+Language selection, word overrides, bounded current-word undo and native caret
+editing remain C++20 code under `src/core/`, with no Qt or OS dependencies.
+The core test suite runs on MSVC, Linux and macOS. Adapters translate keys and
+modifiers; Right Alt/AltGr is excluded from composition shortcuts.
+
+The Windows hook uses the shared selection/override/undo behavior through its
+existing end-of-word edit contract. Navigation still ends its tracked word.
+Native caret editing is exposed by `CompositionSession::Result::cursor` in
+Unicode codepoints. A future Windows TSF adapter can use this same session and
+translate the cursor to UTF-16, as the macOS adapter does. It should own a native
+composition buffer rather than backspace across application-owned text.
+Windows interactive hook tests remain opt-in; compilation and shared-core tests
+do not establish compatibility with every Windows application.
 
 ## Omarchy / Linux (Fcitx 5)
 
 Prerequisites: a C++20 compiler, CMake 3.21+, Fcitx 5 development files and Qt 6.4+
-Core. The native module does not need libuiohook, XTest or Qt Quick. The optional
+Core, Widgets and DBus. The addon itself links Qt Core; Status & Setup uses
+Widgets and DBus. The native package does not need libuiohook, XTest or Qt Quick.
+The optional
 legacy settings panel uses Qt Quick and can be launched with `--no-hook`.
 The addon also exposes built-in preferences through Fcitx's standard
 configuration dialog, requiring no legacy app. The

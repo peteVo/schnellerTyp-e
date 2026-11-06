@@ -15,7 +15,6 @@
 #include <fcitx/userinterfacemanager.h>
 
 #include "app/Settings.hpp"
-#include <QChar>
 #include <QString>
 #include <QProcess>
 
@@ -40,6 +39,7 @@ KeyEvent toCoreKey(const fcitx::KeyEvent &event)
     result.rawCode = static_cast<std::uint16_t>(key.code());
     result.ctrl = states.test(fcitx::KeyState::Ctrl);
     result.alt = states.test(fcitx::KeyState::Alt);
+    result.altGr = states.test(fcitx::KeyState::Mod5);
     result.shift = event.rawKey().states().test(fcitx::KeyState::Shift);
     result.meta = states.test(fcitx::KeyState::Super)
         || states.test(fcitx::KeyState::Super2)
@@ -55,12 +55,13 @@ KeyEvent toCoreKey(const fcitx::KeyEvent &event)
     case FcitxKey_ISO_Left_Tab: result.kind = KeyKind::Tab; return result;
     case FcitxKey_space: result.kind = KeyKind::Space; return result;
     case FcitxKey_Escape: result.kind = KeyKind::Escape; return result;
-    case FcitxKey_Left:
-    case FcitxKey_Right:
+    case FcitxKey_Left: result.kind = KeyKind::Left; return result;
+    case FcitxKey_Right: result.kind = KeyKind::Right; return result;
+    case FcitxKey_Home: result.kind = KeyKind::Home; return result;
+    case FcitxKey_End: result.kind = KeyKind::End; return result;
+    case FcitxKey_Delete: result.kind = KeyKind::Delete; return result;
     case FcitxKey_Up:
     case FcitxKey_Down:
-    case FcitxKey_Home:
-    case FcitxKey_End:
     case FcitxKey_Page_Up:
     case FcitxKey_Page_Down:
         result.kind = KeyKind::Navigation;
@@ -110,6 +111,16 @@ Engine::Engine(fcitx::Instance *instance) : instance_(instance)
     learnAction_.registerAction("schnellertype-learn-literal", &instance_->userInterfaceManager());
     learnConnection_ = learnAction_.connect<fcitx::SimpleAction::Activated>([this](fcitx::InputContext *ic) {
         learnCurrentWord(ic);
+    });
+    vietnameseAction_.setShortText("Vietnamese for this word (Ctrl+Alt+V)");
+    vietnameseAction_.registerAction("schnellertype-word-vietnamese", &instance_->userInterfaceManager());
+    vietnameseConnection_ = vietnameseAction_.connect<fcitx::SimpleAction::Activated>([this](fcitx::InputContext *ic) {
+        wordCommand(ic, KeyKind::ForceVietnamese);
+    });
+    undoAction_.setShortText("Undo current-word edit (Ctrl+Alt+Z)");
+    undoAction_.registerAction("schnellertype-word-undo", &instance_->userInterfaceManager());
+    undoConnection_ = undoAction_.connect<fcitx::SimpleAction::Activated>([this](fcitx::InputContext *ic) {
+        wordCommand(ic, KeyKind::UndoComposition);
     });
     pauseAction_.setShortText("Enable typing assistance");
     pauseAction_.setCheckable(true);
@@ -194,6 +205,8 @@ void Engine::refreshContexts()
 
 Engine::~Engine()
 {
+    instance_->userInterfaceManager().unregisterAction(&undoAction_);
+    instance_->userInterfaceManager().unregisterAction(&vietnameseAction_);
     instance_->userInterfaceManager().unregisterAction(&pauseAction_);
     instance_->userInterfaceManager().unregisterAction(&setupAction_);
     instance_->userInterfaceManager().unregisterAction(&learnAction_);
@@ -208,11 +221,11 @@ void Engine::configureContext(fcitx::InputContext *ic, ContextState& contextStat
         && contextState.mode != "literal" && contextState.mode != "off")
         contextState.mode = "unsupported";
     contextState.session = std::make_unique<CompositionSession>(loadNativeEngine(ic->program()));
-    contextState.rawWord.clear();
-    contextState.wordLearnable = true;
     ic->statusArea().clearGroup(fcitx::StatusGroup::InputMethod);
     ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, statusAction_.get());
     ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &learnAction_);
+    ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &vietnameseAction_);
+    ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &undoAction_);
     pauseAction_.setChecked(settings.enabled());
     ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &pauseAction_);
     ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &setupAction_);
@@ -230,6 +243,8 @@ std::string Engine::statusText(fcitx::InputContext *ic) const
     if (context->mode == "off") return "Paused";
     if (context->mode == "literal") return "Literal for this application";
     if (context->mode == "unsupported") return "Unsupported saved profile — literal input; choose Automatic, German or Vietnamese";
+    if (context->mode == "auto" && context->session->vietnameseOverride())
+        return "Active — Automatic (Vietnamese for this word)";
     return "Active — " + std::string(context->mode == "auto" ? "Automatic" : context->mode == "de" ? "German" : "Vietnamese");
 }
 
@@ -244,6 +259,7 @@ std::string Engine::subModeLabelImpl(const fcitx::InputMethodEntry&, fcitx::Inpu
     if (!context || context->mode == "off") return "OFF";
     if (bypass(ic.capabilityFlags()) || context->mode == "literal") return "RAW";
     if (context->mode == "unsupported") return "!";
+    if (context->session && context->mode == "auto" && context->session->vietnameseOverride()) return "VI*";
     return context->mode == "auto" ? "AUTO" : context->mode == "de" ? "DE" : "VI";
 }
 
@@ -251,18 +267,30 @@ bool Engine::learnCurrentWord(fcitx::InputContext *ic)
 {
     auto *context = state(ic);
     if (!context || !context->hasPreedit || !context->session || context->mode != "auto"
-        || !context->wordLearnable || context->rawWord.empty() || bypass(ic->capabilityFlags()))
+        || bypass(ic->capabilityFlags()))
         return false;
-    const auto raw = context->rawWord;
+    const auto raw = context->session->literalWord();
+    if (raw.empty()) return false;
     Settings settings;
     if (!settings.addLiteralWord(QString::fromStdString(unicode::toUtf8(raw))))
         return false;
     context->session->reset();
     ic->commitString(unicode::toUtf8(raw));
     clearPreedit(ic, *context);
-    context->rawWord.clear();
     refreshContexts();
     return true;
+}
+
+bool Engine::wordCommand(fcitx::InputContext *ic, KeyKind command)
+{
+    auto* context = state(ic);
+    if (!context || !context->session || context->mode != "auto" || bypass(ic->capabilityFlags()))
+        return false;
+    const auto result = context->session->processKey(KeyEvent::of(command));
+    applyResult(ic, *context, result);
+    statusAction_->update(ic);
+    ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
+    return result.handled;
 }
 
 ContextState *Engine::state(fcitx::InputContext *ic) const
@@ -271,14 +299,25 @@ ContextState *Engine::state(fcitx::InputContext *ic) const
 }
 
 void Engine::showPreedit(fcitx::InputContext *ic, ContextState &contextState,
-                         const std::u32string &text)
+                         const std::u32string &text, std::size_t cursor)
 {
     contextState.hasPreedit = true;
     fcitx::Text preedit(unicode::toUtf8(text));
-    preedit.setCursor(static_cast<int>(preedit.toString().size()));
+    preedit.setCursor(static_cast<int>(unicode::toUtf8(std::u32string_view(text).substr(0, cursor)).size()));
     ic->inputPanel().setClientPreedit(preedit);
     ic->updatePreedit();
     contextState.hasPreedit = !text.empty();
+}
+
+void Engine::applyResult(fcitx::InputContext *ic, ContextState& context, const CompositionSession::Result& result)
+{
+    if (result.commit) {
+        // Keep commit and preedit clearing in this order for fast Wayland input.
+        if (!result.text.empty()) ic->commitString(unicode::toUtf8(result.text));
+        clearPreedit(ic, context);
+    } else if (result.handled) {
+        showPreedit(ic, context, result.text, result.cursor);
+    }
 }
 
 void Engine::clearPreedit(fcitx::InputContext *ic, ContextState &contextState)
@@ -297,8 +336,6 @@ void Engine::finish(fcitx::InputContext *ic) noexcept
         if (!contextState || !contextState->session)
             return;
 
-        contextState->rawWord.clear();
-        contextState->wordLearnable = true;
         auto result = contextState->session->finish();
         if (result.commit && !result.text.empty())
             ic->commitString(unicode::toUtf8(result.text));
@@ -318,8 +355,6 @@ void Engine::discard(fcitx::InputContext *ic) noexcept
     }
     if (!contextState)
         return;
-    contextState->rawWord.clear();
-    contextState->wordLearnable = true;
     if (contextState->session) {
         try {
             contextState->session->reset();
@@ -386,29 +421,16 @@ void Engine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &event)
 
         const auto key = toCoreKey(event);
         if (key.ctrl && key.alt && !key.shift && !key.meta
-            && unicode::toLowerAscii(key.character) == U'l' && learnCurrentWord(ic)) {
+            && !key.altGr && unicode::toLowerAscii(key.character) == U'l' && learnCurrentWord(ic)) {
             event.filterAndAccept();
             return;
         }
-        if (contextState->mode == "auto" && !key.isChord() && key.kind == KeyKind::Character) {
-            if (QChar::isLetter(static_cast<char32_t>(key.character)) && contextState->rawWord.size() < 256)
-                contextState->rawWord.push_back(key.character);
-            else
-                contextState->wordLearnable = false;
-        } else if (key.kind == KeyKind::Backspace && !contextState->rawWord.empty()) {
-            contextState->rawWord.pop_back();
-        }
+        const bool wasForced = contextState->session->vietnameseOverride();
         auto result = contextState->session->processKey(key);
-        if (result.commit) {
-            contextState->rawWord.clear();
-            contextState->wordLearnable = true;
-            // Commit before clearing preedit: separate Wayland serial updates
-            // can otherwise invalidate the pending commit at fast typing rates.
-            if (!result.text.empty())
-                ic->commitString(unicode::toUtf8(result.text));
-            clearPreedit(ic, *contextState);
-        } else if (result.handled) {
-            showPreedit(ic, *contextState, result.text);
+        applyResult(ic, *contextState, result);
+        if (wasForced != contextState->session->vietnameseOverride()) {
+            statusAction_->update(ic);
+            ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
         }
 
         if (result.handled)

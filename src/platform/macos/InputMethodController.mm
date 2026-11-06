@@ -42,18 +42,19 @@ st::KeyEvent mapEvent(NSEvent* event)
     case kVK_ANSI_KeypadEnter: key.kind = st::KeyKind::Enter; return key;
     case kVK_Tab: key.kind = st::KeyKind::Tab; return key;
     case kVK_Escape: key.kind = st::KeyKind::Escape; return key;
-    case kVK_LeftArrow:
-    case kVK_RightArrow:
+    case kVK_LeftArrow: key.kind = st::KeyKind::Left; return key;
+    case kVK_RightArrow: key.kind = st::KeyKind::Right; return key;
+    case kVK_Home: key.kind = st::KeyKind::Home; return key;
+    case kVK_End: key.kind = st::KeyKind::End; return key;
+    case kVK_ForwardDelete: key.kind = st::KeyKind::Delete; return key;
     case kVK_UpArrow:
     case kVK_DownArrow:
-    case kVK_Home:
-    case kVK_End:
     case kVK_PageUp:
     case kVK_PageDown: key.kind = st::KeyKind::Navigation; return key;
     default: break;
     }
 
-    NSString* characters = event.characters;
+    NSString* characters = key.ctrl && key.alt ? event.charactersIgnoringModifiers : event.characters;
     NSData* utf8 = [characters dataUsingEncoding:NSUTF8StringEncoding];
     if (utf8.length == 0)
         return key;
@@ -134,11 +135,6 @@ void insertCommit(id<IMKTextInput> client, const std::u32string& text)
     }
 
     const st::KeyEvent key = mapEvent(event);
-    if (key.isChord()) {
-        [self finishCompositionForClient:client];
-        return NO;
-    }
-
     if (!session_)
         return NO;
 
@@ -151,8 +147,10 @@ void insertCommit(id<IMKTextInput> client, const std::u32string& text)
         }
         if (result.handled) {
             NSString* preedit = toNSString(result.text);
+            const auto prefix = std::u32string_view(result.text).substr(0, result.cursor);
+            const NSUInteger cursor = st::unicode::toUtf16(prefix).size();
             [client setMarkedText:preedit
-                    selectionRange:NSMakeRange(preedit.length, 0)
+                    selectionRange:NSMakeRange(cursor, 0)
                   replacementRange:NSMakeRange(NSNotFound, 0)];
             return YES;
         }

@@ -13,7 +13,7 @@ From the repository root:
 omarchy pkg add gcc cmake ninja qt6-base fcitx5
 cd packaging/linux/fcitx5
 makepkg -f
-sudo pacman -U ./schnellertype-e-fcitx5-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./schnellertype-e-fcitx5-0.4.0-1-x86_64.pkg.tar.zst
 ```
 
 This is a local working-tree package: it includes your current source changes
@@ -22,8 +22,8 @@ filename on aarch64. Install optional `fcitx5-gtk` and `fcitx5-qt` integration
 packages for the toolkits you use. Do not install the separate legacy X11
 package for native Wayland typing.
 
-Version 0.3.0 is the development candidate for the native controls and setup
-window. Building it locally does not publish a GitHub release.
+Version 0.4.0 is the development candidate for live word correction and the
+temporary Vietnamese override. Building it locally does not publish a GitHub release.
 
 Finish the current word before restarting the existing input-method service:
 
@@ -67,6 +67,34 @@ only learns the active word made of letters, never previous text, clipboard
 contents, punctuation, or a password/sensitive field. It is unavailable after
 the word has been committed or when the input mode is German/Vietnamese.
 Use **LiteralWords** in native settings to edit or remove learned spellings.
+
+### Correct an unfinished word
+
+Automatic mode converts as you type. Weak short English dictionary matches
+such as `nos` and `af` can become `nó` and `à`, including after English text.
+Common English words and longer English dictionary matches retain their
+existing protection. A rare short abbreviation may therefore convert; press
+Escape to restore its literal spelling for this occurrence.
+
+- **Ctrl+Alt+V** or **Vietnamese for this word** composes the active word directly
+  with the configured Telex/VNI method, without frequency, spelling or personal
+  literal-list vetoes. It never saves a preference and ends with the word.
+- **Ctrl+Alt+Z** or **Undo current-word edit** reverses the last keystroke,
+  conversion or temporary override. The last 128 current-word actions are
+  available; committing, switching focus, or entering a sensitive field clears
+  them. No history is written to disk.
+- Plain **Left/Right/Home/End** move within Automatic's unfinished word.
+  **Backspace/Delete** edit at that caret. Edges are clamped to the composition;
+  Space, punctuation, Enter and Tab finish it. Other navigation and application
+  shortcuts finish the word and pass through to the application.
+- Once the word has become Vietnamese, tone changes remain live even if the
+  resulting valid spelling is uncommon. For example `nos` → `nó`, then `f` →
+  `nò`, then `z` → `no`.
+
+Right Alt/AltGr is excluded from the composition shortcuts. Ordinary Ctrl+Z
+continues to belong to the application. Learning a raw literal spelling is
+available for unedited letter-only words; after a caret edit or deletion, undo
+can restore the original raw word and its learning eligibility.
 
 For app preferences, read **Client ID for app preferences** in the native
 status action's details, then enter exact pairs in **App preferences** in the

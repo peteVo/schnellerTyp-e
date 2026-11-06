@@ -499,7 +499,11 @@ int runParentProbe(bool vni, bool vi)
         return 2;
     }
 
-    const std::array<Sample, 43> telexSamples{{
+    const std::array<Sample, 47> telexSamples{{
+        {L"Short Vietnamese after English", L"This is nos maf af ", L"This is nó mà à ", 5},
+        {L"Short Vietnamese live", L"nos", L"nó", 5},
+        {L"Replace tone before Space", L"nosf", L"nò", 5},
+        {L"Remove tone before Space", L"nosz", L"no", 5},
         {L"Vietnamese", L"hoom nay tooi ddeens New York ", L"hôm nay tôi đến New York ", 20},
         {L"German", L"Ich moechte schoene Aepfel und Wasser. ",
          L"Ich möchte schöne Äpfel und Wasser. ", 5},
@@ -550,7 +554,8 @@ int runParentProbe(bool vni, bool vi)
         {L"Vietnamese: Backspace from nữa", L"nuawx\b ", L"nữ ", 1},
         {L"Vietnamese: Escape restores raw nuawx", L"nuawx\x1b ", L"nuawx ", 5},
     }};
-    const std::array<Sample, 13> vniSamples{{
+    const std::array<Sample, 14> vniSamples{{
+        {L"Short Vietnamese VNI", L"no1 ma2 a2 ", L"nó mà à ", 5},
         {L"VNI: hôm nay tôi đến New York, burst", L"ho6m nay to6i d9e6n1 New York ",
          L"hôm nay tôi đến New York ", 0},
         {L"VNI: tiếng Việt", L"tie6ng1 Vie6t5 ", L"tiếng Việt ", 1},

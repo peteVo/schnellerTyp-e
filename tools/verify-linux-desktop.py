@@ -239,10 +239,42 @@ Layout=
                     ("delayed Telex", "nuawx ", "nữa "),
                     ("literal undo", "ww ", "w "),
                     ("English and identifiers", "This is coffee test@example.com ", "This is coffee test@example.com "),
+                    ("short Vietnamese after English", "This is nos maf af ", "This is nó mà à "),
                 ]:
                     clear()
                     type_text(raw)
                     check(label, "normal", expected, raw)
+                if engine == "addon":
+                    # Browser versions expose IME updates differently to DOM
+                    # composition events; value is the observable live outcome.
+                    live_field = "normal" if browser else "normalPreedit"
+                    clear()
+                    type_text("nosf")
+                    check("live tone replacement", live_field, "nò")
+                    send({"key": "z", "ctrl": True, "alt": True})
+                    check("undo current tone edit before Space", live_field, "nó")
+                    type_text("z")
+                    check("remove current tone before Space", live_field, "no")
+                    type_text(" ")
+                    check("corrected tone commits once", "normal", "no ")
+                    clear()
+                    type_text("as")
+                    send({"key": "v", "ctrl": True, "alt": True})
+                    check("force Vietnamese without Space", live_field, "á")
+                    send({"key": "z", "ctrl": True, "alt": True})
+                    check("undo temporary mode override", live_field, "as")
+                    type_text(" ")
+                    check("word override does not learn a preference", "normal", "as ")
+                    clear()
+                    type_text("hoom")
+                    key("Left")
+                    key("BackSpace")
+                    check("edit inside unfinished word", live_field, "hm")
+                    send({"key": "z", "ctrl": True, "alt": True})
+                    check("undo edit inside unfinished word", live_field, "hôm")
+                    key("End")
+                    type_text(" ")
+                    check("caret-edited word commits once", "normal", "hôm ")
                 clear()
                 type_text("hoom")
                 key("Escape")
