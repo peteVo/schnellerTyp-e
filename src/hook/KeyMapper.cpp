@@ -123,6 +123,7 @@ KeyEvent KeyMapper::fromPressed(std::uint16_t keycode, std::uint16_t mask) const
     ev.shift   = (mask & (MASK_SHIFT_L | MASK_SHIFT_R)) != 0;
     ev.ctrl    = (mask & (MASK_CTRL_L | MASK_CTRL_R)) != 0;
     ev.alt     = (mask & (MASK_ALT_L | MASK_ALT_R)) != 0;
+    ev.altGr   = (mask & MASK_ALT_R) != 0;
     ev.meta    = (mask & (MASK_META_L | MASK_META_R)) != 0;
 
     switch (keycode) {

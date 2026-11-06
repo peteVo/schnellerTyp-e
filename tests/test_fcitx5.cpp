@@ -156,7 +156,7 @@ int main(int argc, char **argv)
     check("Backspace edits composition", client.preedit == "hô");
     reset(client);
     check("empty Backspace passes through", !key(client, fcitx::Key(FcitxKey_BackSpace)));
-    for (const auto sym : {FcitxKey_Return, FcitxKey_Tab, FcitxKey_Left, FcitxKey_Delete}) {
+    for (const auto sym : {FcitxKey_Return, FcitxKey_Tab, FcitxKey_Up, FcitxKey_Page_Down}) {
         reset(client);
         type(client, "hoom");
         check("boundary passes through", !key(client, fcitx::Key(sym)));
@@ -166,6 +166,27 @@ int main(int argc, char **argv)
     type(client, "hoom");
     check("shortcut passes through", !key(client, fcitx::Key(FcitxKey_c, fcitx::KeyState::Ctrl)));
     check("shortcut commits pending text", client.committed == "hôm" && client.preedit.empty());
+    reset(client);
+    type(client, "hoom");
+    check("Left edits uncommitted word", key(client, fcitx::Key(FcitxKey_Left))
+          && client.preedit == "hôm" && client.committed.empty() && client.cursor == 3);
+    key(client, fcitx::Key(FcitxKey_BackSpace));
+    check("Backspace at composition caret", client.preedit == "hm" && client.cursor == 1 && client.committed.empty());
+    check("undo composition shortcut consumed", key(client, fcitx::Key(FcitxKey_z,
+          fcitx::KeyStates(fcitx::KeyState::Ctrl) | fcitx::KeyState::Alt)));
+    check("undo restores text and UTF-8 cursor", client.preedit == "hôm" && client.cursor == 3 && client.committed.empty());
+    key(client, fcitx::Key(FcitxKey_Delete));
+    check("Delete at composition caret", client.preedit == "hô" && client.committed.empty());
+    key(client, fcitx::Key(FcitxKey_space));
+    check("edited composition commits once", client.committed == "hô " && client.preedit.empty());
+    reset(client);
+    type(client, "as");
+    check("word override shortcut consumed", key(client, fcitx::Key(FcitxKey_v,
+          fcitx::KeyStates(fcitx::KeyState::Ctrl) | fcitx::KeyState::Alt)));
+    check("word override previews before commit", client.preedit == "á" && client.committed.empty());
+    key(client, fcitx::Key(FcitxKey_space));
+    type(client, "as ");
+    check("override expires after current word", client.committed == "á as ");
     reset(client);
     type(client, "hoom");
     other.focusIn();
@@ -185,6 +206,10 @@ int main(int argc, char **argv)
         check("sensitive transition discards composition", client.preedit.empty() && client.committed.empty());
         check("sensitive keys pass through", !key(client, fcitx::Key(FcitxKey_a))
               && client.preedit.empty() && client.committed.empty());
+        for (const auto command : {FcitxKey_v, FcitxKey_z})
+            check("sensitive composition commands pass through", !key(client, fcitx::Key(command,
+                  fcitx::KeyStates(fcitx::KeyState::Ctrl) | fcitx::KeyState::Alt))
+                  && client.preedit.empty() && client.committed.empty());
         client.setCapabilityFlags(fcitx::CapabilityFlag::Preedit);
     }
     type(client, "hoom");
@@ -241,6 +266,20 @@ int main(int argc, char **argv)
     pause->activate(&client);
     check("native enable action persists", st::Settings().enabled()
           && status->shortText(&client) == "Active — Automatic");
+    auto* forceWord = instance.userInterfaceManager().lookupAction("schnellertype-word-vietnamese");
+    auto* undoWord = instance.userInterfaceManager().lookupAction("schnellertype-word-undo");
+    check("native word commands registered", forceWord && undoWord);
+    if (!forceWord || !undoWord) return 1;
+    reset(client);
+    type(client, "as");
+    forceWord->activate(&client);
+    check("native action overrides only the word", client.preedit == "á" && client.committed.empty()
+          && status->shortText(&client).find("Vietnamese for this word") != std::string::npos
+          && st::Settings().languageId() == QStringLiteral("auto"));
+    undoWord->activate(&client);
+    check("native action undoes override", client.preedit == "as" && client.committed.empty()
+          && status->shortText(&client) == "Active — Automatic");
+    reset(client);
     update = fcitx::RawConfig();
     update.setValueByPath("LiteralWords", "");
     engine.setConfig(update);
@@ -269,6 +308,7 @@ int main(int argc, char **argv)
     type(client, "test@example.com");
     learn->activate(&client);
     check("address-like input cannot be learned", st::Settings().engineOptions(QStringLiteral("auto")).at("literalWords") == literals);
+    check("learning does not truncate address", client.committed + client.preedit == "test@example.com");
     reset(client);
 
     Client editor(instance.inputContextManager(), "test.editor");

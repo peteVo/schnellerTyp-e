@@ -20,8 +20,6 @@ public:
     std::unique_ptr<CompositionSession> session;
     bool hasPreedit = false;
     std::string mode;
-    std::u32string rawWord;
-    bool wordLearnable = true;
 };
 
 class Engine final : public fcitx::InputMethodEngineV2 {
@@ -32,6 +30,7 @@ public:
     std::string subMode(const fcitx::InputMethodEntry&, fcitx::InputContext& ic) override;
     std::string subModeLabelImpl(const fcitx::InputMethodEntry&, fcitx::InputContext& ic) override;
     bool learnCurrentWord(fcitx::InputContext *ic);
+    bool wordCommand(fcitx::InputContext *ic, KeyKind command);
     const fcitx::Configuration *getConfig() const override;
     void setConfig(const fcitx::RawConfig &config) override;
 
@@ -45,7 +44,8 @@ private:
     void refreshContexts();
     ContextState *state(fcitx::InputContext *ic) const;
     void showPreedit(fcitx::InputContext *ic, ContextState &state,
-                     const std::u32string &text);
+                     const std::u32string &text, std::size_t cursor);
+    void applyResult(fcitx::InputContext *ic, ContextState &state, const CompositionSession::Result& result);
     void clearPreedit(fcitx::InputContext *ic, ContextState &state);
     void finish(fcitx::InputContext *ic) noexcept;
     void discard(fcitx::InputContext *ic) noexcept;
@@ -56,9 +56,11 @@ private:
     fcitx::SimpleAction learnAction_;
     fcitx::SimpleAction pauseAction_;
     fcitx::SimpleAction setupAction_;
+    fcitx::SimpleAction vietnameseAction_, undoAction_;
     fcitx::ScopedConnection learnConnection_;
     fcitx::ScopedConnection pauseConnection_;
     fcitx::ScopedConnection setupConnection_;
+    fcitx::ScopedConnection vietnameseConnection_, undoConnection_;
     fcitx::SimpleInputContextPropertyFactory<ContextState> stateFactory_;
     std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>> focusOutHandler_;
     std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>> capabilityHandler_;

@@ -5,6 +5,33 @@ plain-Fcitx reproduction, validated Chromium XWayland workaround, physical
 keyboard check and published-package lifecycle tests. It narrows the earlier
 Chromium Wayland support claim below. Logout/reboot checks remain pending.
 
+## Development candidate 0.4.0 — 6 November 2026
+
+This changes the shared typing logic: weak short English matches can yield to
+Vietnamese, and a word that has visibly become Vietnamese keeps valid tone
+corrections even when the new spelling is absent from the frequency table.
+Ctrl+Alt+V provides a dictionary-independent word override; Ctrl+Alt+Z restores
+the prior current-word state. Neither writes preferences or typing history.
+Automatic's native composition session also supports caret editing before
+commit. Core behavior remains free of Qt/OS dependencies for Windows reuse.
+
+- Seven local CTest suites passed, including new live conversion, correction,
+  undo, override, VNI, caret, boundary and AltGr cases. A deterministic 2,000-key
+  edit sequence also checked text and cursor bounds.
+- The 30,000-word English audit preserved all 7,080 high-frequency words and
+  all longer rare words in English context. Vietnamese won 76 ambiguous short
+  rare-English context cases; this is the deliberate short-word tradeoff.
+- The private four-client matrix passed 140 checks: GTK Wayland 32, Qt Wayland
+  35, Qt XWayland 35 and Chromium XWayland 38. The new cases assert live preedit
+  text, tone replacement/removal, current-word undo, temporary override and
+  caret editing before Space, in addition to the existing regression gates.
+- Windows hook sample coverage now includes the reported short words and
+  live tone corrections. This machine cannot execute that interactive probe;
+  Windows application/runtime compatibility is not claimed by these results.
+
+The running 0.3.0 package has not been changed by these tests. Physical typing,
+login/reboot and longer use of this new candidate remain separate checks.
+
 ## Development candidate 0.3.0 — 4 November 2026
 
 This candidate adds native Fcitx status/menu controls, Automatic-mode literal

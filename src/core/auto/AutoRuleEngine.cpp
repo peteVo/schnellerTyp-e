@@ -131,6 +131,10 @@ void AutoRuleEngine::clearWord() noexcept
     emitted_.clear();
     literal_ = false;
     overflow_ = false;
+    forcedVietnamese_ = false;
+    vietnameseActive_ = false;
+    learnable_ = true;
+    history_.clear();
 }
 
 void AutoRuleEngine::reset() noexcept
@@ -175,6 +179,15 @@ void AutoRuleEngine::applyOptions(const EngineOptions& options)
 
 AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
 {
+    if (forcedVietnamese_ && !raw_.empty()) {
+        // An explicit word override composes keys, without a dictionary or
+        // spelling veto and without restoring the raw word at its boundary.
+        auto options = vietnamese_.vnOptions();
+        options.spellCheck = false;
+        options.autoRestore = false;
+        VietnameseRuleEngine forced(options);
+        return {render(forced, raw_, final), Language::Vietnamese, 0};
+    }
     if (literal_ || raw_.empty() || literalWords_.contains(lower(raw_)))
         return {raw_, Language::Literal, 0};
 
@@ -219,10 +232,12 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
     // (gross) and English-context homographs (fuss) still favour literal input.
     const bool sharpS = de.find(U'ß') != std::u32string::npos
                         || de.find(U'ẞ') != std::u32string::npos;
-    // English dictionary evidence protects cars/cans/moon from Telex. At a
-    // fresh start only a strongly German sharp-S spelling (Fuss/Weiss) can
+    // English dictionary evidence protects cars/cans/moon from Telex. Weak
+    // short matches (nos, af) are often abbreviations and must not veto Vietnamese.
+    // At a fresh start only a strongly German sharp-S spelling (Fuss/Weiss) can
     // override it; after English prose even those homographs stay literal.
-    if (english > 0
+    const bool weakShortEnglish = english > 0 && english < 400 && raw_.size() <= 3;
+    if (english > 0 && !weakShortEnglish
         && (context_ == Language::English
             || (context_ == Language::Literal
                 && (english >= 400 || raw_.size() >= 3)
@@ -246,6 +261,7 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
     };
 
     auto vi = render(vietnamese_, raw_, false);
+    const bool viableVietnamese = vietnamese_.validWord(!final);
     const bool literalUndo = vietnamese_.hasLiteralUndo();
     if (final)
         vi = render(vietnamese_, raw_, true);
@@ -258,12 +274,48 @@ AutoRuleEngine::Candidate AutoRuleEngine::choose(bool final)
         && !(de != raw_ && deScore >= 300))
         return {std::move(vi), Language::Literal, 0};
     const int viScore = frequency(kVietnameseWords, vi);
+    // Once a word has visibly become Vietnamese, keep valid tone/mark edits
+    // usable even for uncommon spellings absent from the frequency table.
+    if (vietnameseActive_ && english < 400 && viableVietnamese && vi != raw_)
+        return {std::move(vi), Language::Vietnamese, viScore};
     if (viScore >= 300)
         consider(std::move(vi), Language::Vietnamese, viScore);
 
     if (deScore >= 300)
         consider(std::move(de), Language::German, deScore);
     return best;
+}
+
+void AutoRuleEngine::remember(std::size_t cursor)
+{
+    if (history_.size() == 128)
+        history_.erase(history_.begin());
+    history_.push_back({raw_, emitted_, cursor, literal_, forcedVietnamese_, vietnameseActive_, learnable_});
+}
+
+std::u32string AutoRuleEngine::literalWord() const
+{
+    return learnable_ && !raw_.empty()
+        && std::all_of(raw_.begin(), raw_.end(), wordCharacter) ? raw_ : std::u32string();
+}
+
+EngineResult AutoRuleEngine::editWord(std::u32string text, std::size_t cursor, std::size_t previousCursor)
+{
+    remember(previousCursor);
+    const auto rawSize = text.size();
+    raw_ = std::move(text);
+    learnable_ = false;
+    const bool letters = std::all_of(raw_.begin(), raw_.end(), wordCharacter);
+    forcedVietnamese_ = letters && (forcedVietnamese_ || vietnameseActive_);
+    literal_ = !forcedVietnamese_;
+    auto candidate = choose(false);
+    vietnameseActive_ = candidate.language == Language::Vietnamese;
+    // A modifier can replace a preceding character without advancing the caret.
+    const auto adjustment = static_cast<int>(candidate.text.size()) - static_cast<int>(rawSize);
+    const auto position = std::clamp(static_cast<int>(cursor) + adjustment, 0, static_cast<int>(candidate.text.size()));
+    auto result = replace(std::move(candidate.text));
+    result.cursor = position;
+    return result;
 }
 
 EngineResult AutoRuleEngine::replace(std::u32string text, char32_t natural)
@@ -279,6 +331,29 @@ EngineResult AutoRuleEngine::replace(std::u32string text, char32_t natural)
 
 EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
 {
+    const auto command = compositionKey(event);
+    if (command.kind == KeyKind::UndoComposition && !history_.empty()) {
+        auto previous = std::move(history_.back());
+        history_.pop_back();
+        raw_ = std::move(previous.raw);
+        literal_ = previous.literal;
+        forcedVietnamese_ = previous.forcedVietnamese;
+        vietnameseActive_ = previous.vietnameseActive;
+        learnable_ = previous.learnable;
+        auto result = replace(std::move(previous.emitted));
+        result.cursor = static_cast<int>(previous.cursor);
+        return result;
+    }
+    if (command.kind == KeyKind::ForceVietnamese && !raw_.empty() && !overflow_
+        && std::all_of(raw_.begin(), raw_.end(), [this](char32_t c) {
+            return wordCharacter(c) || (vietnamese_.vnOptions().method == VnInputMethod::Vni && unicode::isAsciiDigit(c));
+        })) {
+        remember(emitted_.size());
+        forcedVietnamese_ = true;
+        literal_ = false;
+        vietnameseActive_ = true;
+        return replace(choose(false).text);
+    }
     if (event.isChord()) {
         reset();
         return EngineResult::passthrough();
@@ -286,8 +361,11 @@ EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
     if (event.kind == KeyKind::Modifier)
         return EngineResult::passthrough();
     if (event.kind == KeyKind::Escape) {
-        if (raw_ != emitted_ && !raw_.empty()) {
+        if (!raw_.empty() && (raw_ != emitted_ || forcedVietnamese_)) {
+            remember(emitted_.size());
             literal_ = true;
+            forcedVietnamese_ = false;
+            vietnameseActive_ = false;
             return replace(raw_);
         }
         reset();
@@ -300,6 +378,9 @@ EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
         }
         // Backspace removes one visible character, even when several physical
         // keys produced it. Keep remaining accents as directly typed Unicode.
+        remember(emitted_.size());
+        learnable_ = false;
+        forcedVietnamese_ = forcedVietnamese_ || vietnameseActive_;
         raw_ = emitted_;
         raw_.pop_back();
         emitted_ = raw_;
@@ -312,15 +393,19 @@ EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
     if (event.kind == KeyKind::Character && (wordCharacter(c) || vniDigit || literal_)) {
         if (overflow_)
             return EngineResult::passthrough();
+        remember(emitted_.size());
         raw_.push_back(c);
         if (raw_.size() > 128) {
             auto edit = replace(raw_, c);
             raw_.clear();
             emitted_.clear();
             overflow_ = true;
+            history_.clear();
             return edit;
         }
-        return replace(choose(false).text, c);
+        auto candidate = choose(false);
+        vietnameseActive_ = candidate.language == Language::Vietnamese && candidate.text != raw_;
+        return replace(std::move(candidate.text), c);
     }
 
     // Keep email addresses, paths, identifiers, numbers and contractions literal.
@@ -328,7 +413,11 @@ EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
     if (event.kind == KeyKind::Character
         && (c == U'@' || c == U'/' || c == U'\\' || c == U'_' || c == U':'
             || c == U'=' || c == U'#' || c == U'\'' || unicode::isAsciiDigit(c))) {
+        remember(emitted_.size());
         literal_ = true;
+        forcedVietnamese_ = false;
+        vietnameseActive_ = false;
+        learnable_ = false;
         raw_.push_back(c);
         return replace(raw_, c);
     }

@@ -227,6 +227,7 @@ bool HookService::dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data
     key.alt = alt;
     key.shift = shift;
     key.meta = meta;
+    key.altGr = down(VK_RMENU);
     key.rawCode = static_cast<std::uint16_t>(vk);
     if (modifier || vk == VK_CAPITAL || vk == VK_NUMLOCK || vk == VK_SCROLL) {
         key.kind = KeyKind::Modifier;
@@ -241,6 +242,11 @@ bool HookService::dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data
         case VK_END: case VK_PRIOR: case VK_NEXT: case VK_DELETE: case VK_INSERT:
             key.kind = KeyKind::Navigation; break;
         default: {
+            if (control && alt && !key.altGr && vk >= 'A' && vk <= 'Z') {
+                key.kind = KeyKind::Character;
+                key.character = static_cast<char32_t>(vk + ('a' - 'A'));
+                break;
+            }
             if (const auto override = mapper_.overrideFor(static_cast<std::uint16_t>(native.scanCode))) {
                 const bool upper = shift ^ (mapper_.capsLock() && unicode::isAsciiAlpha(override->plain));
                 key.kind = KeyKind::Character;

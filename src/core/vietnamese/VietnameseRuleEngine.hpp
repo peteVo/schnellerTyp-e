@@ -66,6 +66,7 @@ public:
     [[nodiscard]] const std::u32string& composed() const noexcept { return emitted_; }
     /// Explicit repeated modifiers requested literal text for this word.
     [[nodiscard]] bool hasLiteralUndo() const noexcept { return literalUndo_; }
+    [[nodiscard]] bool validWord(bool partial) const { return vn::isValidSyllable(letters_, tone_, partial); }
 
 private:
     static constexpr std::size_t kNoBlock = static_cast<std::size_t>(-1);

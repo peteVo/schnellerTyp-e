@@ -18,6 +18,8 @@
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
 
 #include <cstdio>
+#include <iterator>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -353,6 +355,144 @@ void testComposition()
     checkTrue("composition/disabled", !disabled.processKey(st::KeyEvent::character_(U'a')).handled);
 }
 
+void testLiveComposition()
+{
+    st::AutoRuleEngine engine;
+    check("auto/live-nos", U"nos", U"nó", engine);
+    check("auto/short-after-English", U"This is nos maf af ", U"This is nó mà à ", engine);
+    check("auto/live-tone-replacement", U"nosf", U"nò", engine);
+    check("auto/live-tone-removal", U"nosz", U"no", engine);
+    check("auto/live-repeated-tone", U"noss", U"nos", engine);
+    engine.applyOptions({{"method", "vni"}});
+    check("auto/short-vni", U"no1 ma2 a2 ", U"nó mà à ", engine);
+
+    auto shortcut = [](char32_t c) {
+        auto key = st::KeyEvent::character_(c);
+        key.ctrl = key.alt = true;
+        return key;
+    };
+    const auto force = shortcut(U'v'), undo = shortcut(U'z');
+    const auto make = [] { return st::CompositionSession(std::make_unique<st::AutoRuleEngine>()); };
+    auto session = make();
+    const auto type = [](st::CompositionSession& target, std::u32string_view keys) {
+        st::CompositionSession::Result result;
+        for (auto c : keys)
+            result = target.processKey(c == U' ' ? st::KeyEvent::of(st::KeyKind::Space) : st::KeyEvent::character_(c));
+        return result;
+    };
+    checkTrue("live/common-English-preserved", type(session, U"as").text == U"as");
+    auto result = session.processKey(force);
+    checkTrue("live/word-override", result.handled && !result.commit && result.text == U"á" && session.vietnameseOverride());
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Escape));
+    checkTrue("live/Escape-cancels-override", result.handled && result.text == U"as" && !session.vietnameseOverride());
+    result = session.processKey(undo);
+    checkTrue("live/undo-Escape", result.handled && result.text == U"á" && session.vietnameseOverride());
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Space));
+    checkTrue("live/override-commits", result.commit && result.text == U"á " && !session.vietnameseOverride());
+    checkTrue("live/override-word-only", type(session, U"as").text == U"as");
+    session.reset();
+    checkTrue("live/no-undo-across-reset", !session.processKey(undo).handled);
+    checkTrue("live/empty-override-passes-through", !session.processKey(force).handled);
+    type(session, U"nosf");
+    checkTrue("live/undo-tone-replacement", session.processKey(undo).text == U"nó");
+    checkTrue("live/undo-tone-keystroke", session.processKey(undo).text == U"no");
+    session.reset();
+    type(session, U"nos");
+    session.processKey(st::KeyEvent::of(st::KeyKind::Backspace));
+    result = session.processKey(undo);
+    checkTrue("live/undo-visible-deletion", result.text == U"nó" && session.literalWord() == U"nos");
+
+    session.reset();
+    type(session, U"hoom");
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Left));
+    checkTrue("live/caret-left-keeps-preedit", result.handled && !result.commit && result.text == U"hôm" && result.cursor == 2);
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Backspace));
+    checkTrue("live/delete-before-caret", result.text == U"hm" && result.cursor == 1 && session.literalWord().empty());
+    result = session.processKey(undo);
+    checkTrue("live/undo-caret-edit-restores-raw-and-cursor", result.text == U"hôm" && result.cursor == 2 && session.literalWord() == U"hoom");
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Delete));
+    checkTrue("live/delete-at-caret", result.text == U"hô" && result.cursor == 2);
+    session.processKey(undo);
+    result = session.processKey(st::KeyEvent::character_(U'f'));
+    checkTrue("live/mark-inside-word", result.text == U"hồm" && result.cursor == 2);
+    session.processKey(st::KeyEvent::of(st::KeyKind::End));
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Space));
+    checkTrue("live/edited-word-commits-once", result.commit && result.text == U"hồm " && session.finish().text.empty());
+
+    type(session, U"tooi");
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Home));
+    checkTrue("live/Home-cursor", result.cursor == 0 && !result.commit);
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Backspace));
+    checkTrue("live/Backspace-at-start-does-not-edit-client", result.handled && !result.commit && result.text == U"tôi");
+    result = session.processKey(st::KeyEvent::of(st::KeyKind::Delete));
+    checkTrue("live/Delete-at-start", result.text == U"ôi" && result.cursor == 0);
+    result = session.processKey(st::KeyEvent::character_(U'b'));
+    checkTrue("live/insert-at-start", result.text == U"bôi" && result.cursor == 1);
+    auto copy = st::KeyEvent::character_(U'c'); copy.ctrl = true;
+    result = session.processKey(copy);
+    checkTrue("live/application-shortcut-commits-once", !result.handled && result.commit && result.text == U"bôi");
+    checkTrue("live/no-undo-after-commit", !session.processKey(undo).handled);
+
+    type(session, U"as");
+    auto altGr = force; altGr.altGr = true;
+    result = session.processKey(altGr);
+    checkTrue("live/AltGr-does-not-force-mode", !result.handled && result.commit && result.text == U"as");
+
+    // The hook's existing end-of-word edit contract uses the same commands.
+    engine.applyOptions({{"method", "telex"}, {"literalWords", "nos"}});
+    auto text = typeKeys(engine, U"nos");
+    const auto apply = [&](const st::KeyEvent& key) {
+        const auto edit = engine.processKey(key);
+        if (edit.handled) { text.resize(text.size() - static_cast<std::size_t>(edit.backspaces)); text += edit.text; }
+    };
+    apply(force);
+    checkTrue("live/hook-word-override-ignores-literal-list", text == U"nó");
+    apply(undo);
+    checkTrue("live/hook-undo-override", text == U"nos");
+
+    session.reset();
+    result = type(session, U"tooi,");
+    checkTrue("live/punctuation-commits-owned-word", result.commit && result.text == U"tôi,");
+    checkTrue("live/no-undo-across-punctuation", !session.processKey(undo).handled);
+    type(session, U"as");
+    result = session.processKey(force);
+    checkTrue("live/override-after-punctuation", result.text == U"á" && result.cursor == 1);
+    session.reset();
+    type(session, U"test@example.com");
+    checkTrue("live/address-suffix-not-learnable", session.literalWord().empty());
+    session.processKey(st::KeyEvent::of(st::KeyKind::Space));
+    type(session, U"hoom");
+    checkTrue("live/learning-after-token-boundary", session.literalWord() == U"hoom");
+
+    auto vni = std::make_unique<st::AutoRuleEngine>();
+    vni->applyOptions({{"method", "vni"}, {"literalWords", "no1"}});
+    st::CompositionSession vniSession(std::move(vni));
+    type(vniSession, U"no1");
+    checkTrue("live/forced-VNI-keeps-method", vniSession.processKey(force).text == U"nó");
+
+    std::minstd_rand random(73);
+    std::vector<st::KeyEvent> events;
+    for (int i = 0; i < 2000; ++i) {
+        constexpr std::u32string_view letters = U"nosmafzwhoộạ\U0001f680";
+        constexpr st::KeyKind controls[] = {st::KeyKind::Space, st::KeyKind::Backspace,
+            st::KeyKind::Left, st::KeyKind::Right, st::KeyKind::Home, st::KeyKind::End,
+            st::KeyKind::Delete, st::KeyKind::UndoComposition, st::KeyKind::ForceVietnamese,
+            st::KeyKind::Escape, st::KeyKind::Enter};
+        const auto index = random() % (letters.size() + std::size(controls));
+        events.push_back(index < letters.size() ? st::KeyEvent::character_(letters[index])
+            : st::KeyEvent::of(controls[index - letters.size()]));
+    }
+    auto first = make(), second = make();
+    bool deterministic = true, bounded = true;
+    for (const auto& event : events) {
+        const auto a = first.processKey(event), b = second.processKey(event);
+        deterministic &= a.handled == b.handled && a.commit == b.commit && a.text == b.text && a.cursor == b.cursor;
+        bounded &= a.text.size() <= 256 && a.cursor <= a.text.size();
+    }
+    checkTrue("live/edit-sequence-is-deterministic", deterministic);
+    checkTrue("live/edit-sequence-keeps-text-and-cursor-bounded", bounded);
+}
+
 } // namespace
 
 int main()
@@ -364,6 +504,7 @@ int main()
     testRegistry();
     testAutomatic();
     testComposition();
+    testLiveComposition();
 
     std::printf("\n%d checks, %d failure(s)\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;

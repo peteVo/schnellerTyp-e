@@ -11,6 +11,7 @@ struct State {
     GtkWidget *password;
     const char *path;
     GtkWidget *window;
+    QString normalPreedit;
 };
 
 int main(int argc, char **argv)
@@ -24,7 +25,10 @@ int main(int argc, char **argv)
     gtk_window_set_default_size(GTK_WINDOW(window), 600, 220);
     auto *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_container_add(GTK_CONTAINER(window), box);
-    State state{gtk_entry_new(), gtk_entry_new(), gtk_entry_new(), path, window};
+    State state{gtk_entry_new(), gtk_entry_new(), gtk_entry_new(), path, window, {}};
+    g_signal_connect(state.normal, "preedit-changed", G_CALLBACK(+[](GtkEntry*, const gchar* text, gpointer data) {
+        static_cast<State*>(data)->normalPreedit = QString::fromUtf8(text);
+    }), &state);
     gtk_entry_set_visibility(GTK_ENTRY(state.password), FALSE);
     gtk_entry_set_input_purpose(GTK_ENTRY(state.password), GTK_INPUT_PURPOSE_PASSWORD);
     for (auto *field : {state.normal, state.second, state.password})
@@ -36,6 +40,7 @@ int main(int argc, char **argv)
             return QString::fromUtf8(gtk_entry_get_text(GTK_ENTRY(widget)));
         };
         QJsonObject json{{"normal", text(s.normal)}, {"second", text(s.second)},
+                         {"normalPreedit", s.normalPreedit},
                          {"password", text(s.password)},
                          {"focus", gtk_widget_has_focus(s.normal) ? "normal"
                              : gtk_widget_has_focus(s.second) ? "second" : "password"}};

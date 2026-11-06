@@ -5,6 +5,7 @@
 #include "core/vietnamese/VietnameseRuleEngine.hpp"
 
 #include <set>
+#include <vector>
 
 namespace st {
 
@@ -22,6 +23,11 @@ public:
     void applyOptions(const EngineOptions& options) override;
     [[nodiscard]] EngineOptions options() const override { return options_; }
     void setGermanExceptions(GermanRuleEngine::ExceptionTable exceptions);
+    /// Replace visible text during native caret editing; prior raw keys remain undoable.
+    EngineResult editWord(std::u32string text, std::size_t cursor, std::size_t previousCursor);
+    [[nodiscard]] std::u32string literalWord() const;
+    [[nodiscard]] const std::u32string& currentText() const noexcept { return emitted_; }
+    [[nodiscard]] bool vietnameseOverride() const noexcept { return forcedVietnamese_; }
 
 private:
     enum class Language { Literal, English, Vietnamese, German };
@@ -34,6 +40,13 @@ private:
     Candidate choose(bool final);
     EngineResult replace(std::u32string text, char32_t natural = 0);
     void clearWord() noexcept;
+    void remember(std::size_t cursor);
+    struct Snapshot {
+        std::u32string raw;
+        std::u32string emitted;
+        std::size_t cursor;
+        bool literal, forcedVietnamese, vietnameseActive, learnable;
+    };
 
     VietnameseRuleEngine vietnamese_;
     GermanRuleEngine german_;
@@ -44,6 +57,10 @@ private:
     Language context_ = Language::Literal;
     bool literal_ = false;
     bool overflow_ = false;
+    bool forcedVietnamese_ = false;
+    bool vietnameseActive_ = false;
+    bool learnable_ = true;
+    std::vector<Snapshot> history_;
 };
 
 } // namespace st

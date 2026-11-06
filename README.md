@@ -22,15 +22,29 @@ to `nữa`; literal undo remains literal after Space.
 Automatic compares literal input with Vietnamese and German candidates using
 80,403 offline word-frequency entries and a small amount of language context.
 Known English words, unknown names and ambiguous words favour literal input.
+Weak short English matches such as `nos` and `af` can yield the much stronger
+Vietnamese candidates `nó` and `à`. Rare abbreviations can therefore convert;
+Escape restores their literal spelling for the current occurrence.
 This is a conservative statistical heuristic; identical keys can express
 different intentions, so it cannot promise perfect automatic interpretation.
 
 - Press **Escape before Space** to restore the original keys of the current word.
+- In Automatic mode, **Ctrl+Alt+V** composes the current word as Vietnamese,
+  even when a dictionary or personal literal preference would block it. The
+  override ends with the word and never changes saved preferences.
+- **Ctrl+Alt+Z** undoes the last current-word keystroke, conversion or temporary
+  override. Its history ends when the word is committed or focus changes.
 - Add names or technical terms under **Preferences → Keep these words literal**.
 - Addresses, paths, identifiers and contractions are kept literal once their
   identifying punctuation is typed.
 - German and Vietnamese manual modes and custom JSON profiles remain available.
 - New installations default to Automatic; existing saved mode choices are kept.
+
+In native Automatic composition, plain Left/Right/Home/End move within the
+unfinished word; Backspace/Delete edit at that caret. Space, punctuation,
+Enter or Tab finish composition. Application shortcuts retain their normal
+role; the two composition shortcuts above are handled only while applicable.
+Right Alt/AltGr does not trigger those shortcuts.
 
 Everything needed for typing runs locally. No account, network service or
 typing-history collection is required. Optional debug tracing can include
