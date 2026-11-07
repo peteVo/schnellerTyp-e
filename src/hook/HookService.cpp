@@ -273,6 +273,11 @@ bool HookService::dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data
         }
     }
 
+    const auto commandKind = compositionKey(key).kind;
+    const bool compositionCommand = commandKind == KeyKind::ForceVietnamese
+                                    || commandKind == KeyKind::UndoComposition;
+    if (key.isChord() && key.kind != KeyKind::Modifier && !compositionCommand)
+        discardQueuedEdits();
     const auto generation = editGeneration_.load(std::memory_order_acquire);
     EngineResult result;
     try {
@@ -288,8 +293,11 @@ bool HookService::dispatchWindowsKey(std::uintptr_t message, std::uintptr_t data
         return false;
     }
     if (result.handled) {
-        if (!result.isNoop())
-            enqueue(Edit{result.backspaces, std::move(result.text)}, generation);
+        if (!result.isNoop()) {
+            Edit edit{result.backspaces, std::move(result.text)};
+            edit.waitForModifiers = compositionCommand;
+            enqueue(std::move(edit), generation);
+        }
         return true;
     }
     if (!key.isChord() && syntheticPending_.load(std::memory_order_acquire) > 0) {
@@ -771,6 +779,25 @@ void HookService::injectorLoop()
             continue;
         }
 #if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
+        const auto modifiersHeld = [] {
+            return (GetAsyncKeyState(VK_CONTROL) & 0x8000) || (GetAsyncKeyState(VK_MENU) & 0x8000)
+                || (GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000);
+        };
+        // Explicit composition commands arrive while their modifiers are down.
+        // Keep ordinary pending edits subject to the shortcut cancellation below.
+        if (edit.waitForModifiers) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (modifiersHeld() && !injectorQuit_.load()
+                   && edit.generation == editGeneration_.load(std::memory_order_acquire)
+                   && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            if (injectorQuit_.load()
+                || edit.generation != editGeneration_.load(std::memory_order_acquire)) {
+                if (presses > 0)
+                    subtractPending(syntheticPending_, presses);
+                continue;
+            }
+        }
         const FocusTarget target = foregroundFocus();
         if (target.foreground != edit.foreground || target.focus != edit.focus
             || isCurrentProcessWindow(target.foreground)) {
@@ -779,8 +806,7 @@ void HookService::injectorLoop()
                 subtractPending(syntheticPending_, presses);
             continue;
         }
-        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) || (GetAsyncKeyState(VK_MENU) & 0x8000)
-            || (GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000)) {
+        if (modifiersHeld()) {
             // A delayed Backspace must not become Ctrl+Backspace when the user
             // begins a shortcut while replacement text is still queued.
             discardQueuedEdits();

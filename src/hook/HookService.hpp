@@ -143,6 +143,7 @@ private:
 #if defined(SCHNELLERTYPE_PLATFORM_WINDOWS)
         std::uintptr_t foreground = 0;
         std::uintptr_t focus = 0;
+        bool waitForModifiers = false;
 #endif
     };
 

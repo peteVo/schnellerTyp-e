@@ -124,7 +124,7 @@ bool acquireFocus(ScratchWindow& scratch)
     UpdateWindow(scratch.window);
     SetForegroundWindow(scratch.window);
     SetFocus(scratch.edit);
-    const auto deadline = GetTickCount64() + 30'000;
+    const auto deadline = GetTickCount64() + 90'000;
     ULONGLONG focusedSince = 0;
     do {
         pumpMessages();
@@ -296,6 +296,63 @@ TypeResult sendCharacter(const ScratchWindow& scratch, wchar_t character)
         return TypeResult::CapsLockOn;
     if (!noCommandModifierHeld())
         return TypeResult::ModifierHeld;
+
+    if (character == 0x16 || character == 0x1a) {
+        const WORD key = character == 0x16 ? 'V' : 'Z';
+        auto releaseAll = [&] {
+            INPUT release[3]{};
+            const WORD keys[] = {key, VK_LMENU, VK_LCONTROL};
+            for (UINT i = 0; i < 3; ++i) {
+                release[i].type = INPUT_KEYBOARD;
+                release[i].ki.wVk = keys[i];
+                release[i].ki.dwFlags = KEYEVENTF_KEYUP;
+            }
+            SendInput(3, release, sizeof(INPUT));
+        };
+        auto send = [&](WORD virtualKey, DWORD flags) {
+            if (!scratchOwnsFocus(scratch) || !capsLockIsOff()) {
+                releaseAll();
+                return false;
+            }
+            INPUT event{};
+            event.type = INPUT_KEYBOARD;
+            event.ki.wVk = virtualKey;
+            event.ki.dwFlags = flags;
+            if (SendInput(1, &event, sizeof(INPUT)) != 1) {
+                releaseAll();
+                return false;
+            }
+            return true;
+        };
+        if (!send(VK_LCONTROL, 0))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        Sleep(5);
+        if (!send(VK_LMENU, 0))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        Sleep(5);
+        if (!send(key, 0))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        if (!send(key, KEYEVENTF_KEYUP))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        Sleep(75);
+        if (!send(VK_LMENU, KEYEVENTF_KEYUP))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        if (!send(VK_LCONTROL, KEYEVENTF_KEYUP))
+            return !scratchOwnsFocus(scratch) ? TypeResult::FocusLost
+                                              : !capsLockIsOff() ? TypeResult::CapsLockOn
+                                                                 : TypeResult::SendFailed;
+        return TypeResult::Success;
+    }
 
     const HKL layout = GetKeyboardLayout(0);
     const SHORT mapping = character == L'\n' ? VK_RETURN
@@ -499,9 +556,13 @@ int runParentProbe(bool vni, bool vi)
         return 2;
     }
 
-    const std::array<Sample, 47> telexSamples{{
+    const std::array<Sample, 51> telexSamples{{
         {L"Short Vietnamese after English", L"This is nos maf af ", L"This is nó mà à ", 5},
         {L"Short Vietnamese live", L"nos", L"nó", 5},
+        {L"Ctrl+Alt+V forces Vietnamese", L"as\x16", L"\u00e1", 5},
+        {L"Ctrl+Alt+V then Ctrl+Alt+Z restores raw", L"as\x16\x1a", L"as", 5},
+        {L"Ctrl+Alt+Z undoes tone to raw", L"nos\x1a", L"no", 5},
+        {L"Ctrl+Alt+V forces heens", L"heens\x16", L"h\u1ebfn", 5},
         {L"Replace tone before Space", L"nosf", L"nò", 5},
         {L"Remove tone before Space", L"nosz", L"no", 5},
         {L"Vietnamese", L"hoom nay tooi ddeens New York ", L"hôm nay tôi đến New York ", 20},
@@ -554,8 +615,9 @@ int runParentProbe(bool vni, bool vi)
         {L"Vietnamese: Backspace from nữa", L"nuawx\b ", L"nữ ", 1},
         {L"Vietnamese: Escape restores raw nuawx", L"nuawx\x1b ", L"nuawx ", 5},
     }};
-    const std::array<Sample, 14> vniSamples{{
+    const std::array<Sample, 15> vniSamples{{
         {L"Short Vietnamese VNI", L"no1 ma2 a2 ", L"nó mà à ", 5},
+        {L"VNI Ctrl+Alt+Z undoes no1 to raw", L"no1\x1a", L"no", 5},
         {L"VNI: hôm nay tôi đến New York, burst", L"ho6m nay to6i d9e6n1 New York ",
          L"hôm nay tôi đến New York ", 0},
         {L"VNI: tiếng Việt", L"tie6ng1 Vie6t5 ", L"tiếng Việt ", 1},

@@ -51,9 +51,17 @@ try {
     Copy-Item $exe $stageDir
 
     $env:PATH = "$($QtDir)\bin;$MinGWBin;$env:PATH"
-    & $windeployqt --release --qmldir (Join-Path $SourceDir 'qml') --compiler-runtime `
-        (Join-Path $stageDir 'schnellerTyp-e.exe')
-    if ($LASTEXITCODE -ne 0) { Fail "windeployqt failed with exit code $LASTEXITCODE." }
+    # Windows PowerShell 5.1 can treat native stderr warnings as terminating errors.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $windeployqt --release --qmldir (Join-Path $SourceDir 'qml') --compiler-runtime `
+            (Join-Path $stageDir 'schnellerTyp-e.exe')
+        $windeployqtExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($windeployqtExitCode -ne 0) { Fail "windeployqt failed with exit code $windeployqtExitCode." }
 
     Copy-Item $UiohookDll (Join-Path $stageDir 'libuiohook.dll')
     foreach ($runtime in 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll') {
