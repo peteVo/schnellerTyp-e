@@ -444,11 +444,52 @@ void testLiveComposition()
     const auto apply = [&](const st::KeyEvent& key) {
         const auto edit = engine.processKey(key);
         if (edit.handled) { text.resize(text.size() - static_cast<std::size_t>(edit.backspaces)); text += edit.text; }
+        return edit;
     };
     apply(force);
     checkTrue("live/hook-word-override-ignores-literal-list", text == U"nó");
     apply(undo);
     checkTrue("live/hook-undo-override", text == U"nos");
+
+    engine.reset();
+    engine.applyOptions({{"method", "telex"}});
+    text = typeKeys(engine, U"as");
+    auto ctrlDown = st::KeyEvent::of(st::KeyKind::Modifier);
+    ctrlDown.ctrl = true;
+    auto ctrlAltDown = st::KeyEvent::of(st::KeyKind::Modifier);
+    ctrlAltDown.ctrl = ctrlAltDown.alt = true;
+    auto edit = apply(ctrlDown);
+    checkTrue("live/hook-Ctrl-down-keeps-word", !edit.handled && text == U"as" && engine.currentText() == U"as");
+    edit = apply(ctrlAltDown);
+    checkTrue("live/hook-Alt-down-keeps-word", !edit.handled && text == U"as" && engine.currentText() == U"as");
+    edit = apply(force);
+    checkTrue("live/hook-force-after-modifiers", edit.handled && text == U"á");
+    apply(ctrlAltDown);
+    apply(undo);
+    checkTrue("live/hook-undo-after-modifiers", text == U"as");
+
+    engine.reset();
+    text = typeKeys(engine, U"nos");
+    apply(ctrlDown);
+    apply(ctrlAltDown);
+    apply(undo);
+    checkTrue("live/hook-undo-after-modifier-downs", text == U"no");
+
+    engine.reset();
+    text = typeKeys(engine, U"as");
+    auto ctrlC = st::KeyEvent::character_(U'c');
+    ctrlC.ctrl = true;
+    edit = apply(ctrlC);
+    checkTrue("live/hook-Ctrl-C-passes-through-and-resets", !edit.handled && engine.currentText().empty());
+    edit = apply(force);
+    checkTrue("live/hook-empty-word-does-not-force", !edit.handled && !engine.vietnameseOverride());
+
+    engine.reset();
+    text = typeKeys(engine, U"as");
+    auto altGrForce = force;
+    altGrForce.altGr = true;
+    edit = apply(altGrForce);
+    checkTrue("live/hook-AltGr-does-not-force", !edit.handled && !engine.vietnameseOverride());
 
     session.reset();
     result = type(session, U"tooi,");

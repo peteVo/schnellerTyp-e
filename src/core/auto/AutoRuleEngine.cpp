@@ -331,6 +331,9 @@ EngineResult AutoRuleEngine::replace(std::u32string text, char32_t natural)
 
 EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
 {
+    // Physical modifier presses precede the composition shortcut itself.
+    if (event.kind == KeyKind::Modifier)
+        return EngineResult::passthrough();
     const auto command = compositionKey(event);
     if (command.kind == KeyKind::UndoComposition && !history_.empty()) {
         auto previous = std::move(history_.back());
@@ -358,8 +361,6 @@ EngineResult AutoRuleEngine::processKey(const KeyEvent& event)
         reset();
         return EngineResult::passthrough();
     }
-    if (event.kind == KeyKind::Modifier)
-        return EngineResult::passthrough();
     if (event.kind == KeyKind::Escape) {
         if (!raw_.empty() && (raw_ != emitted_ || forcedVietnamese_)) {
             remember(emitted_.size());
