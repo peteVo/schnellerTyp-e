@@ -8,7 +8,7 @@ without switching language modes between words. C++20, Qt 6 and QML.
 | Platform | Published download | Development branch |
 | --- | --- | --- |
 | Windows x64 | [Windows 0.4.0](https://github.com/peteVo/schnellerTyp-e/releases/tag/windows-v0.4.0) | `codex/windows` |
-| Linux / Omarchy / Arch x86_64 | [Linux 0.2.2](https://github.com/peteVo/schnellerTyp-e/releases/tag/v0.2.2) | `codex/linux` |
+| Linux / Omarchy / Arch x86_64 | [Linux 0.4.0](https://github.com/peteVo/schnellerTyp-e/releases/tag/linux-v0.4.0) | `codex/linux` |
 
 The OS branches share the language engine and core tests. Their release timing
 and binaries are independent; use the platform download above. Future tags use

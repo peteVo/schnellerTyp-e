@@ -9,22 +9,23 @@ merged or cherry-picked between channels, preserving compatibility; do not
 maintain independent engine forks. The older terminal-UI branch remains
 separate and is not part of this release line.
 
-Tag the validated Windows release `windows-v0.4.0`. Keep the published Linux
-`v0.2.2` release labeled as Linux; do not create or imply a Linux 0.4.0 binary
-from Windows validation. Future Linux releases use `linux-vX.Y.Z` tags and
-Linux-built assets. Retain the native Linux packaging and version steps below.
+Tag the validated Windows release `windows-v0.4.0`. Linux releases use
+`linux-vX.Y.Z` tags and Linux-built assets. The Linux `0.4.0` package must be
+built and verified from `codex/linux`; Windows validation alone does not
+establish Linux compatibility. Retain the native Linux packaging and version
+steps below.
 
 Release assets must match their OS and be built from the tagged commit. Windows
 release validation requires the native MinGW build, all five CTest suites,
 and the 77 real keyboard-hook checks. Interactive checks require a human
 at an unlocked desktop; run them in CI only when that environment is available.
 
-## Omarchy / Fcitx 5 patch release
+## Omarchy / Fcitx 5 release
 
 Update `project(VERSION ...)` in `CMakeLists.txt` and `pkgver` in
 `packaging/linux/fcitx5/PKGBUILD`, resetting `pkgrel` to 1 for a new version.
 Update `RELEASE-NOTES.md` and the installation filename in the native setup
-guide. Build with `makepkg -f` from `packaging/linux/fcitx5`; this runs all six
+guide. Build with `makepkg -f` from `packaging/linux/fcitx5`; this runs all seven
 native suites before producing the package and optional debug package.
 
 Create a versioned directory under `dist/`, copy the packages and the final

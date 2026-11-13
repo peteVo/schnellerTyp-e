@@ -22,8 +22,10 @@ filename on aarch64. Install optional `fcitx5-gtk` and `fcitx5-qt` integration
 packages for the toolkits you use. Do not install the separate legacy X11
 package for native Wayland typing.
 
-Version 0.4.0 is the development candidate for live word correction and the
-temporary Vietnamese override. Building it locally does not publish a GitHub release.
+Version 0.4.0 is the Linux release for live word correction, current-word
+overrides and native caret editing. The package and release assets are built
+from the Linux branch; see [release notes](../../../RELEASE-NOTES.md) for the
+verified client paths and limits.
 
 Finish the current word before restarting the existing input-method service:
 

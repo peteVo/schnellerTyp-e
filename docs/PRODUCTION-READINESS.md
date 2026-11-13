@@ -101,3 +101,13 @@ restart, check `systemctl --user is-enabled omarchy-fcitx5.service`,
 new app processes, and selection/settings persistence in Fcitx. Perform the
 physical-keyboard test again and test Chromium with the saved XWayland flags.
 No reboot or logout has been performed, and no startup-cycle pass is claimed.
+
+## Follow-up acceptance — 13 November 2026
+
+The deferred logout/login check has since passed on the installed 0.4.0-1
+package. Fcitx remained enabled and active; GTK/Qt input modules and Chromium's
+supported XWayland flags persisted; the Fcitx profile retained schnellerTyp-e;
+all keyboards remained English (US). Physical typing passed in Qt Wayland
+before logout and Chromium XWayland after login. See [current verification](../VERIFICATION.md)
+for the package hash, matrix results and remaining limits. A reboot and longer
+ordinary-use session are still unverified.

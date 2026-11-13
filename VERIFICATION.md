@@ -3,7 +3,8 @@
 See [the 3 November readiness audit](docs/PRODUCTION-READINESS.md) for the
 plain-Fcitx reproduction, validated Chromium XWayland workaround, physical
 keyboard check and published-package lifecycle tests. It narrows the earlier
-Chromium Wayland support claim below. Logout/reboot checks remain pending.
+Chromium Wayland support claim below. The 13 November logout/login check is
+recorded in the 0.4.0 acceptance section.
 
 ## Development candidate 0.4.0 — 6 November 2026
 
@@ -29,8 +30,46 @@ commit. Core behavior remains free of Qt/OS dependencies for Windows reuse.
   live tone corrections. This machine cannot execute that interactive probe;
   Windows application/runtime compatibility is not claimed by these results.
 
-The running 0.3.0 package has not been changed by these tests. Physical typing,
-login/reboot and longer use of this new candidate remain separate checks.
+At the time of this 6 November candidate validation, the installed 0.3.0
+package remained unchanged. The subsequent installed-package acceptance check
+is recorded below.
+
+## Installed package acceptance — 13 November 2026
+
+The Omarchy host has `schnellertype-e-fcitx5 0.4.0-1` installed (built and
+installed 10 November). Its Fcitx module SHA-256 matches the retained package
+archive exactly. The checkout is `codex/linux` at
+`bc9af9078e62997eb16f5148536140fde0451eed`.
+
+- Rebuilt the current checkout with warnings treated as errors. All seven
+  CTest suites passed.
+- The installed-package private desktop matrix passed **140/140 checks** at
+  20 ms per generated character: GTK Wayland 32, Qt Wayland 35, Qt XWayland
+  35, and Chromium XWayland 38. Coverage includes live conversion, tone
+  correction, caret edits, current-word override and undo, focus boundaries,
+  sensitive-field bypass, paste, AltGr, and pause/resume. The isolated Fcitx
+  session reported the installed addon loaded.
+- A separate run of the optional Chromium native Wayland route reproduced
+  dropped input: `hoom nuawx` appeared as `hom nuawx` in the password field.
+  This route remains experimental; Chromium XWayland is the supported path.
+- Read-only checks on the actual Hyprland session found the existing Fcitx
+  service enabled and active, `keyboard-us` selected, and all attached
+  keyboards using English (US).
+- A coordinated physical-keyboard check in the actual Hyprland Qt scratch
+  window passed on the installed package: mixed English/German/Vietnamese
+  text, an independent second field, and literal synthetic password input.
+- After a logout/login, the Fcitx service remained enabled and active, the
+  user's systemd environment retained the GTK/Qt Fcitx modules, Chromium's
+  supported XWayland flags remained configured, and the Fcitx profile retained
+  schnellerTyp-e as its default input method. No app settings file exists, so
+  the default Automatic mode remains in effect. Every keyboard remained on
+  English (US), and Hyprland reported no configuration errors.
+- A second physical-keyboard check after login passed in a fresh Chromium
+  XWayland profile on the installed package, including mixed-language input,
+  an independent field, and literal synthetic password input. The probe
+  restored the previous active source (`keyboard-us`) and Fcitx state.
+
+A reboot cycle and longer ordinary-use session remain pending.
 
 ## Development candidate 0.3.0 — 4 November 2026
 
